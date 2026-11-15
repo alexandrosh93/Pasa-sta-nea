@@ -665,41 +665,17 @@ def hook_background(path, focus=None, blur=0):
     im.focus = tuple(focus) if focus else (0.5, 0.5)
     return im
 
-def flag_img(code, w, h):
-    """Simple national flags drawn in code (crisp at any size)."""
-    im = Image.new("RGB", (w, h), (255, 255, 255)); d = ImageDraw.Draw(im)
-    if code == "gr":
-        blue = (13, 94, 175); sh = h / 9
-        for i in range(0, 9, 2): d.rectangle((0, i * sh, w, (i + 1) * sh), fill=blue)
-        c = sh * 5
-        d.rectangle((0, 0, c, c), fill=blue)
-        d.rectangle((0, 2 * sh, c, 3 * sh), fill=(255, 255, 255))
-        d.rectangle((2 * sh, 0, 3 * sh, c), fill=(255, 255, 255))
-    elif code == "nl":
-        d.rectangle((0, 0, w, h / 3), fill=(174, 28, 40)); d.rectangle((0, 2 * h / 3, w, h), fill=(33, 70, 139))
-    elif code == "cy":
-        d.ellipse((w * 0.3, h * 0.25, w * 0.7, h * 0.65), fill=(213, 120, 0))
-    elif code == "de":
-        d.rectangle((0, 0, w, h / 3), fill=(0, 0, 0)); d.rectangle((0, h / 3, w, 2 * h / 3), fill=(221, 0, 0))
-        d.rectangle((0, 2 * h / 3, w, h), fill=(255, 206, 0))
-    elif code == "rs":
-        d.rectangle((0, 0, w, h / 3), fill=(198, 54, 60)); d.rectangle((0, h / 3, w, 2 * h / 3), fill=(12, 64, 118))
-    elif code == "me":
-        d.rectangle((0, 0, w, h), fill=(197, 12, 30)); d.rectangle((w * 0.05, h * 0.07, w * 0.95, h * 0.93), outline=(212, 175, 55), width=max(2, h // 18))
-    return im
-
-def _flag_disc(code, D):
-    """Round flag with a white ring and a soft shadow."""
-    S4 = D * 4
-    fl = flag_img(code, int(S4 * 1.5), S4)
-    fl = fl.crop(((fl.width - S4) // 2 if code != "gr" else 0, 0, ((fl.width - S4) // 2 if code != "gr" else 0) + S4, S4))
-    mask = Image.new("L", (S4, S4), 0); ImageDraw.Draw(mask).ellipse((0, 0, S4 - 1, S4 - 1), fill=255)
-    disc = Image.new("RGBA", (S4, S4), (0, 0, 0, 0)); disc.paste(fl, (0, 0), mask)
-    ImageDraw.Draw(disc).ellipse((0, 0, S4 - 1, S4 - 1), outline=(255, 255, 255, 255), width=S4 // 22)
-    disc = disc.resize((D, D), Image.LANCZOS)
-    out = Image.new("RGBA", (D + 40, D + 40), (0, 0, 0, 0))
-    sh = Image.new("RGBA", out.size, (0, 0, 0, 0)); ImageDraw.Draw(sh).ellipse((20, 28, D + 20, D + 28), fill=(0, 0, 0, 150))
-    out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10))); out.alpha_composite(disc, (20, 20))
+def _flag_wave(code, width):
+    """Accurate national flag from the Noto emoji font (any ISO code: cy, gr, me, nl, ...), with a soft shadow."""
+    ch = "".join(chr(0x1F1E6 + ord(c) - ord("a")) for c in code.lower())
+    f = ImageFont.truetype(EMOJI_FONT, 109)
+    im = Image.new("RGBA", (220, 180), (0, 0, 0, 0))
+    ImageDraw.Draw(im).text((10, 10), ch, font=f, embedded_color=True)
+    im = im.crop(im.getbbox())
+    im = im.resize((width, int(im.height * width / im.width)), Image.LANCZOS)
+    out = Image.new("RGBA", (im.width + 40, im.height + 40), (0, 0, 0, 0))
+    sh = Image.new("RGBA", out.size, (0, 0, 0, 0)); sh.paste((0, 0, 0, 140), (20, 28), im)
+    out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10))); out.alpha_composite(im, (20, 20))
     return out
 
 def scoreboard_card(sb):
@@ -720,7 +696,7 @@ def scoreboard_card(sb):
     cy = oy + 205
     for code, name, cx in ((sb.get("home_flag"), sb["home"], ox + 175), (sb.get("away_flag"), sb["away"], ox + CWd - 175)):
         if code:
-            disc = _flag_disc(code, 190); im.alpha_composite(disc, (int(cx - disc.width / 2), int(cy - disc.height / 2 - 10)))
+            disc = _flag_wave(code, 210); im.alpha_composite(disc, (int(cx - disc.width / 2), int(cy - disc.height / 2 - 10)))
         nf = font(F_BLACK_I, 52)
         while nf.size > 30 and d.textlength(name, font=nf) > 300: nf = font(F_BLACK_I, nf.size - 2)
         d.text((cx, oy + 365), name, font=nf, fill=WHITE, anchor="mm")
