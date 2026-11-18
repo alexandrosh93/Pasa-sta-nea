@@ -34,12 +34,37 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             t = abs(y / H - 0.42) * 1.5
             d.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * min(1, t)) for a, b in zip(B.BG1, B.BG2)))
         n = Image.effect_noise((W, H), 30).convert("L").point(lambda v: v // 14)
-        img = Image.composite(Image.new("RGB", (W, H), (40, 70, 75)), img, n)
-        d = ImageDraw.Draw(img, "RGBA")
-        for i in range(3):                                   # one quiet stripe group, top-left
-            ox = -60 + i * 44
-            d.polygon([(ox, 0), (ox + 24, 0), (ox - 176, 200), (ox - 200, 200)], fill=B.GREEN + (90,))
-        return img.convert("RGBA")
+        img = Image.composite(Image.new("RGB", (W, H), (40, 70, 75)), img, n).convert("RGBA")
+        deco = Image.new("RGBA", (W, H), (0, 0, 0, 0)); d = ImageDraw.Draw(deco)
+        def dots(cx, cy, sx, sy, reach=520, alpha=80):        # halftone that fades away from a corner
+            for gx in range(0, reach, 20):
+                for gy in range(0, int(reach * 0.55), 20):
+                    r = 6.5 - math.hypot(gx, gy * 1.6) / 85
+                    if r > 0.8:
+                        x, y = cx + sx * gx, cy + sy * gy
+                        d.ellipse((x - r, y - r, x + r, y + r), fill=B.GREEN + (alpha,))
+        def stripes(x, y, n, length, width, gap, alpha, flip=1):
+            for i in range(n):
+                ox = x + i * gap * flip
+                d.polygon([(ox, y), (ox + width * flip, y), (ox + (width - length) * flip, y + length),
+                           (ox - length * flip, y + length)], fill=B.GREEN + (alpha,))
+        # top: stripes left, halftone right, thin accent line
+        stripes(-40, -40, 4, 250, 26, 44, 150)
+        dots(W - 10, 10, -1, 1)
+        d.line([(0, 206), (W, 206)], fill=B.GREEN + (60,), width=2)
+        # bottom: halftone left, stripes right, soft green glow
+        dots(10, H - 10, 1, -1)
+        stripes(W + 30, H - 330, 5, 330, 26, 44, 170, -1)
+        glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(glow).ellipse((-200, H - 260, W + 200, H + 260), fill=B.GREEN + (40,))
+        img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(80)))
+        img.alpha_composite(deco)
+        # kicker in the top band (decor only: it sits under the app's top bar)
+        kick = cfg.get("kicker", "ΚΥΠΡΙΑΚΟ ΠΟΔΟΣΦΑΙΡΟ"); kf = font(B.F_BOLD, 34); dd = ImageDraw.Draw(img)
+        tot = sum(dd.textlength(c, font=kf) for c in kick) + 9 * (len(kick) - 1); x = (W - tot) / 2
+        for c in kick:
+            dd.text((x, 150), c, font=kf, fill=(170, 200, 205)); x += dd.textlength(c, font=kf) + 9
+        return img
 
     title = B.title_layer(rnd); title = title.resize((400, int(title.height * 400 / title.width)), Image.LANCZOS)
     badge = B.date_badge(B.reel_date(cfg), w=78, h=96) if cfg.get("show_date", True) else None
@@ -112,6 +137,70 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
     def word_time(words, key):
         k = B._norm(key.split()[0])
         return next((a for a, b, w in words if B._norm(w).startswith(k)), None)
+
+    # ---------------------------------------------------------------- banners (broadcast style)
+    _m = ImageDraw.Draw(Image.new("L", (1, 1)))
+    def bar_img(text, f, fill, txt=None, skew=24, padx=30, hpad=1.2):
+        tw = _m.textlength(text, font=f); bh = int(f.size * hpad); bw = int(tw + 2 * padx + skew)
+        im = Image.new("RGBA", (bw + 30, bh + 34), (0, 0, 0, 0))
+        sh = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        ImageDraw.Draw(sh).polygon([(skew + 8, 14), (bw + 8, 14), (bw - skew + 8, bh + 14), (8, bh + 14)], fill=(0, 0, 0, 150))
+        im.alpha_composite(sh.filter(ImageFilter.GaussianBlur(9)))
+        d = ImageDraw.Draw(im)
+        d.polygon([(skew, 0), (bw, 0), (bw - skew, bh), (0, bh)], fill=fill + (255,))
+        d.text((skew / 2 + padx, bh / 2 + 3), text, font=f, fill=txt or B.INK, anchor="lm")
+        return im
+
+    def banner(s, size=96, maxw=860):
+        """Tag (dark, yellow text) + one skewed bar per headline line: white, or green when it has [highlight]."""
+        lines = [(ln.replace("[", "").replace("]", ""), "[" in ln) for ln in s["headline"]]
+        f = font(B.F_BLACK_I, size)
+        while f.size > 50 and max(_m.textlength(t, font=f) + 84 + 26 * i for i, (t, _) in enumerate(lines)) > maxw:
+            f = font(B.F_BLACK_I, f.size - 2)
+        tag = bar_img(s["tag"], font(B.F_XB_I, 34), (8, 22, 28), B.YELLOW, skew=16, padx=22, hpad=1.45)
+        parts = [(tag, (0, 0))]
+        y = tag.height - 34 + 8
+        for i, (t, hl) in enumerate(lines):
+            bi = bar_img(t, f, B.GREEN if hl else B.WHITE)
+            parts.append((bi, (10 + 26 * i, y))); y += bi.height - 34 + 6
+        return dict(parts=parts, h=y + 28, w=max(x + im.width for im, (x, _) in parts))
+
+    def banner_flat(Bn):
+        L = Image.new("RGBA", (Bn["w"], Bn["h"] + 34), (0, 0, 0, 0))
+        for im, (x, y) in Bn["parts"]: L.alpha_composite(im, (x, y))
+        return L
+
+    def draw_banner(img, Bn, x0, y_bottom, u=None):
+        """u=None: fully shown. Otherwise the tag and bars wipe in from the left one after the other."""
+        y0 = y_bottom - Bn["h"]
+        for i, (im, (x, y)) in enumerate(Bn["parts"]):
+            r = 1.0 if u is None else B.ease((u - 0.10 - 0.09 * i) / 0.30)
+            if r <= 0: continue
+            piece = im if r >= 1 else im.crop((0, 0, max(1, int(im.width * r)), im.height))
+            img.alpha_composite(piece, (int(x0 + x - 40 * (1 - r)), int(y0 + y)))
+
+    # ---------------------------------------------------------------- news ticker
+    def ticker_strip():
+        items = cfg.get("ticker") or ([f"{st['tag']} — " + " ".join(ln.replace("[", "").replace("]", "") for ln in st["headline"])
+                                       for st in stories] + ["kouponaki.com"])
+        tf = font(B.F_XB_I, 32)
+        seq = []
+        for it in items: seq += [(it, B.WHITE), ("   •   ", B.YELLOW)]
+        sw = int(sum(_m.textlength(t, font=tf) for t, _ in seq))
+        im = Image.new("RGBA", (sw * 2 + 10, 58), (0, 0, 0, 0)); d = ImageDraw.Draw(im); x = 0
+        for _ in range(2):
+            for t, c in seq: d.text((x, 30), t, font=tf, fill=c, anchor="lm"); x += _m.textlength(t, font=tf)
+        lab = bar_img(cfg.get("ticker_label", "ΠΑΣΑ στα ΝΕΑ"), font(B.F_BLACK_I, 34), B.GREEN, skew=14, padx=18, hpad=1.6)
+        return dict(text=im, sw=sw, label=lab)
+
+    TICK_Y = 1528
+    def draw_ticker(img, T, tg):
+        d = ImageDraw.Draw(img)
+        d.rectangle((0, TICK_Y, W, TICK_Y + 58), fill=(6, 16, 20, 235))
+        d.line([(0, TICK_Y), (W, TICK_Y)], fill=B.GREEN + (255,), width=3)
+        off = int(tg * 115) % T["sw"]
+        img.alpha_composite(T["text"].crop((off, 0, off + W, 58)), (0, TICK_Y))
+        img.alpha_composite(T["label"], (-8, TICK_Y - 2))
 
     # ---------------------------------------------------------------- stat badge
     def stat_card(value, label):
@@ -193,8 +282,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             ts = word_time(words, extra["at"]) if extra.get("at") else None
             if ts is not None: imgs.append((max(0.0, ts - 0.1), load_photo(os.path.join(B.HERE, extra["src"]), extra.get("focus"))))
         imgs.sort(key=lambda x: x[0])
-        layer = B.story_layer(s, rnd, body=False, size=100)
-        layer = layer.resize((int(layer.width * 0.86), int(layer.height * 0.86)), Image.LANCZOS)
+        layer = banner(s, size=int(s.get("banner_size", 92)))
         st = None
         if s.get("stat"):
             ts = word_time(words, s["stat"]["at"])
@@ -208,7 +296,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             return [stat_card(f"{v}{suf}", st["label"]) for v in range(n + 1)]
         return [stat_card(st["value"], st["label"])]
 
-    def story_frame(P, t, dur):
+    def story_frame(P, t, dur, tg):
         img = canvas0.copy()
         cur = max(i for i, (ts, _) in enumerate(P["imgs"]) if ts <= t) if P["imgs"] else -1
         if cur >= 0:
@@ -220,7 +308,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 ph = Image.blend(kb_crop(pim, 1.0, cur - 1), ph, _clamp((t - ts) / 0.25))
             ph = ph.convert("RGBA"); ph.alpha_composite(overlay)
             img.alpha_composite(ph, (0, PY))
-        img.alpha_composite(P["layer"], (26, CAP_Y - 92 - P["layer"].height))
+        draw_banner(img, P["layer"], 30, CAP_Y - 70, t)
         st = P["stat"]
         if st and st["t"] <= t < st["t"] + st.get("hold", 3.0):
             u = t - st["t"]
@@ -233,20 +321,17 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
 
     def end_card():
         L = bg_plain.copy()
-        d = ImageDraw.Draw(L)
-        d.text((60, PROG_Y + 50), cfg.get("end_title", "ΣΗΜΕΡΑ ΕΙΔΑΜΕ"), font=font(B.F_XB_I, 46), fill=B.YELLOW)
-        y = PROG_Y + 128
+        t = bar_img(cfg.get("end_title", "ΣΗΜΕΡΑ ΕΙΔΑΜΕ"), font(B.F_XB_I, 40), (8, 22, 28), B.YELLOW, skew=16, padx=22, hpad=1.45)
+        L.alpha_composite(t, (40, PROG_Y + 46))
+        y = PROG_Y + 46 + t.height
         for i, s in enumerate(stories, 1):
-            d.rounded_rectangle((46, y, 930, y + 150), 26, fill=(8, 22, 28, 225), outline=(255, 255, 255, 30), width=2)
-            d.ellipse((72, y + 33, 156, y + 117), fill=B.GREEN + (255,))
-            d.text((114, y + 77), str(i), font=font(B.F_BLACK_I, 58), fill=B.INK, anchor="mm")
-            hf = font(B.F_BLACK_I, 54)
-            lines = s["headline"]
-            while hf.size > 34 and max(B.rich_len(d, ln, hf) for ln in lines) > 720: hf = font(B.F_BLACK_I, hf.size - 2)
-            lh = int(hf.size * 1.02); yy = y + 75 - lh * len(lines) / 2
-            for ln in lines:
-                B.rich(d, (186, yy), ln, hf, B.WHITE, B.YELLOW); yy += lh
-            y += 172
+            num = bar_img(str(i), font(B.F_BLACK_I, 76), B.GREEN, skew=20, padx=22)
+            text = " ".join(ln.replace("[", "").replace("]", "") for ln in s["headline"])
+            f = font(B.F_BLACK_I, 66)
+            while f.size > 34 and _m.textlength(text, font=f) + 84 > 880 - num.width: f = font(B.F_BLACK_I, f.size - 2)
+            row = bar_img(text, f, B.WHITE, skew=20)
+            L.alpha_composite(num, (40, y)); L.alpha_composite(row, (40 + num.width - 30, y + (num.height - row.height) // 2))
+            y += num.height + 10
         return L
 
     # ---------------------------------------------------------------- render
@@ -255,6 +340,8 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                              "-crf", str(cfg.get("crf", 16)), "-profile:v", "high", "-g", str(FPS * 2),
                              "-pix_fmt", "yuv420p", video], stdin=subprocess.PIPE)
     FCARD = B.follow_card(cfg) if FT else None
+    TK = ticker_strip()
+    T0 = 0.0
     last = None
     k_story = -1
     cover_saved = False
@@ -264,8 +351,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         ev = []
         if kind == "hook":
             bg = B.hook_background(os.path.join(B.HERE, s["image"]) if s.get("image") else None, s.get("focus"), s.get("blur", 0))
-            layer = B.story_layer(s, rnd, body=False, size=min(150, int(s.get("size", 150))))
-            layer = layer.resize((int(layer.width * 0.9), int(layer.height * 0.9)), Image.LANCZOS)
+            layer = banner_flat(banner(s, size=min(124, int(s.get("size", 124))), maxw=880))
             SB = B.scoreboard_card(s["scoreboard"]) if s.get("scoreboard") else None
             for f in range(n):
                 t = f / FPS
@@ -277,7 +363,8 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 if SB is not None:
                     B.place(img, SB, W / 2 + shake, 560, (1 + 0.6 * (punch - 1)) * 0.94 + 0.03 * t / dur)
                 L = layer if punch == 1.0 else layer.resize((int(layer.width * punch), int(layer.height * punch)), Image.BILINEAR)
-                img.alpha_composite(L, (26 + shake - (L.width - layer.width) // 2, (830 if SB is not None else 760) - (L.height - layer.height) // 2))
+                img.alpha_composite(L, (34 + shake - (L.width - layer.width) // 2, (850 if SB is not None else 760) - (L.height - layer.height) // 2))
+                draw_ticker(img, TK, T0 + t)
                 if not cover_saved and t >= 0.6:   # cover for the profile grid: no caption on it
                     img.convert("RGB").save(os.path.splitext(out)[0] + "-cover.jpg", quality=95); cover_saved = True
                 ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci), 1350)
@@ -306,7 +393,8 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             from_intro = segments[si - 1][0] in ("intro", "hook")
             for f in range(n):
                 t = f / FPS
-                content = story_frame(P, t, dur)
+                content = story_frame(P, t, dur, T0 + t)
+                draw_ticker(content, TK, T0 + t)
                 ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
                 clean = content                      # header-free copy for the next push
                 frac = _clamp(t / dur)
@@ -325,14 +413,15 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             ev.append((0.0, "whoosh", 0.38))
             for f in range(n):
                 t = f / FPS
-                content = EC.copy()
+                content = EC.copy(); draw_ticker(content, TK, T0 + t)
                 if not FT or t < FT["tF"]:
                     ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
                 img = push(last, content, t / TR, 0) if (last is not None and t < TR) else content
                 header(img); progress(img, NS, 1.0)
-                if FT: B.draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 860)))
+                if FT: B.draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 1150)))
                 proc.stdin.write(img.tobytes())
             last = img
         if ev: sfx[si] = ev
+        T0 += dur
     proc.stdin.close(); proc.wait()
     return sfx
