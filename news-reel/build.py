@@ -1292,95 +1292,100 @@ def main():
             still.convert("RGB").save(name if os.path.isabs(name) else os.path.join(os.path.dirname(out), name), quality=95)
             print("still:", name)
     video = os.path.join(tmp, "video.mp4")
-    proc = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
-                             "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium",
-                             "-crf", "19", "-pix_fmt", "yuv420p", video], stdin=subprocess.PIPE)
-    for si, ((kind, s), (wav, words, dur, lead), (layer, rows)) in enumerate(zip(segments, audio, layers)):
-        caps = chunks(words, s["voice"])
-        n = int(round(dur * FPS))
-        if kind == "hook":
-            bgimg = rows
-            SB = scoreboard_card(s["scoreboard"]) if s.get("scoreboard") else None
+    SFX = {}
+    if cfg.get("layout") == "v2":
+        import v2
+        SFX = v2.render(sys.modules[__name__], cfg, segments, audio, FT, video, rnd, intro_video, intro_start, out)
+    else:
+        proc = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
+                                 "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium",
+                                 "-crf", "19", "-pix_fmt", "yuv420p", video], stdin=subprocess.PIPE)
+        for si, ((kind, s), (wav, words, dur, lead), (layer, rows)) in enumerate(zip(segments, audio, layers)):
+            caps = chunks(words, s["voice"])
+            n = int(round(dur * FPS))
+            if kind == "hook":
+                bgimg = rows
+                SB = scoreboard_card(s["scoreboard"]) if s.get("scoreboard") else None
+                for f in range(n):
+                    t = f / FPS
+                    img = hook_frame(bgimg, t, dur)
+                    if SB is not None:   # readable on frame 0, settles with a small punch, then a slow push-in
+                        k = 1.0 + 0.06 * (1 - ease(t / 0.3)) + 0.03 * (t / max(dur, 0.1))
+                        place(img, SB, W / 2, int(s["scoreboard"].get("y", 420)), k)
+                    if logo: img.alpha_composite(logo, ((W - logo.width) // 2, H - logo.height - LOGO_BOTTOM))
+                    if BADGE: img.alpha_composite(BADGE, (W - BADGE.width - 4, 70))
+                    # punch-in: starts big (already readable on frame 0), settles fast
+                    sc = 1.0 + 0.07 * (1 - ease(t / 0.25))
+                    shake = int(10 * math.sin(t * 60) * max(0, 1 - t / 0.35))
+                    L = layer if sc == 1.0 else layer.resize((int(layer.width * sc), int(layer.height * sc)), Image.BILINEAR)
+                    img.alpha_composite(L, ((W - L.width) // 2 + 45 + shake, 760 - (L.height - layer.height) // 2))
+                    cur = next((c for c in caps if c[0][0] - 0.05 <= t <= c[-1][1] + 0.25), None)
+                    draw_caption(img, cur, t)
+                    proc.stdin.write(img.convert("RGBA").tobytes())
+                continue
+            if kind == "intro" and intro_video:
+                dec = subprocess.Popen(["ffmpeg", "-loglevel", "error", "-ss", f"{intro_start:.3f}", "-i", intro_video, "-t", f"{dur:.3f}",
+                                        "-vf", f"scale={W}:{H},fps={FPS}", "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+                                       stdout=subprocess.PIPE)
+                last = None
+                for f in range(n):
+                    buf = dec.stdout.read(W * H * 4)
+                    if len(buf) == W * H * 4: last = Image.frombytes("RGBA", (W, H), buf)
+                    img = last.copy()
+                    t = f / FPS
+                    cur = next((c for c in caps if c[0][0] - 0.05 <= t <= c[-1][1] + 0.25), None)
+                    draw_caption(img, cur, t)
+                    proc.stdin.write(img.tobytes())
+                dec.stdout.close(); dec.wait()
+                continue
             for f in range(n):
                 t = f / FPS
-                img = hook_frame(bgimg, t, dur)
-                if SB is not None:   # readable on frame 0, settles with a small punch, then a slow push-in
-                    k = 1.0 + 0.06 * (1 - ease(t / 0.3)) + 0.03 * (t / max(dur, 0.1))
-                    place(img, SB, W / 2, int(s["scoreboard"].get("y", 420)), k)
-                if logo: img.alpha_composite(logo, ((W - logo.width) // 2, H - logo.height - LOGO_BOTTOM))
-                if BADGE: img.alpha_composite(BADGE, (W - BADGE.width - 4, 70))
-                # punch-in: starts big (already readable on frame 0), settles fast
-                sc = 1.0 + 0.07 * (1 - ease(t / 0.25))
-                shake = int(10 * math.sin(t * 60) * max(0, 1 - t / 0.35))
-                L = layer if sc == 1.0 else layer.resize((int(layer.width * sc), int(layer.height * sc)), Image.BILINEAR)
-                img.alpha_composite(L, ((W - L.width) // 2 + 45 + shake, 760 - (L.height - layer.height) // 2))
-                cur = next((c for c in caps if c[0][0] - 0.05 <= t <= c[-1][1] + 0.25), None)
-                draw_caption(img, cur, t)
-                proc.stdin.write(img.convert("RGBA").tobytes())
-            continue
-        if kind == "intro" and intro_video:
-            dec = subprocess.Popen(["ffmpeg", "-loglevel", "error", "-ss", f"{intro_start:.3f}", "-i", intro_video, "-t", f"{dur:.3f}",
-                                    "-vf", f"scale={W}:{H},fps={FPS}", "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
-                                   stdout=subprocess.PIPE)
-            last = None
-            for f in range(n):
-                buf = dec.stdout.read(W * H * 4)
-                if len(buf) == W * H * 4: last = Image.frombytes("RGBA", (W, H), buf)
-                img = last.copy()
-                t = f / FPS
-                cur = next((c for c in caps if c[0][0] - 0.05 <= t <= c[-1][1] + 0.25), None)
-                draw_caption(img, cur, t)
-                proc.stdin.write(img.tobytes())
-            dec.stdout.close(); dec.wait()
-            continue
-        for f in range(n):
-            t = f / FPS
-            img = base.copy()
-            # title: pops in on the very first segment
-            if si == next(i for i, sg in enumerate(segments) if sg[0] == "story"):
-                sc = 0.6 + 0.4 * ease(t / 0.45)
-                tl = title.resize((int(title.width * sc), int(title.height * sc)), Image.BILINEAR)
-                img.alpha_composite(tl, ((W - tl.width) // 2, TITLE_Y + (title.height - tl.height) // 2))
-            else:
-                img.alpha_composite(title, ((W - title.width) // 2, TITLE_Y))
-            area_top = TOP - 20
-            if isinstance(rows, dict) and rows.get("table") is not None:
-                if rows.get("recap"):
-                    draw_table(img, rows["table"], t, TOP - 20, reveal=False)
+                img = base.copy()
+                # title: pops in on the very first segment
+                if si == next(i for i, sg in enumerate(segments) if sg[0] == "story"):
+                    sc = 0.6 + 0.4 * ease(t / 0.45)
+                    tl = title.resize((int(title.width * sc), int(title.height * sc)), Image.BILINEAR)
+                    img.alpha_composite(tl, ((W - tl.width) // 2, TITLE_Y + (title.height - tl.height) // 2))
+                else:
+                    img.alpha_composite(title, ((W - title.width) // 2, TITLE_Y))
+                area_top = TOP - 20
+                if isinstance(rows, dict) and rows.get("table") is not None:
+                    if rows.get("recap"):
+                        draw_table(img, rows["table"], t, TOP - 20, reveal=False)
+                        if FOLLOW and FT:
+                            draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 900)))
+                    else:
+                        draw_table(img, rows["table"], t, TOP - 20, table_highlights(rows["table"], words, t))
+                elif rows is None:
+                    p = ease(t / 0.4)
+                    img.alpha_composite(layer, (int(-W * (1 - p)), area_top + 20))
+                elif isinstance(rows, dict):  # story with photo: framed photo + headline panel
+                    fr = rows
+                    pp = ease((t - 0.08) / 0.4)
+                    z = 1.0 + 0.08 * (t / max(dur, 0.1))
+                    src = fr["photo"]
+                    cw, ch = int(src.width / z), int(src.height / z)
+                    cx, cy = (src.width - cw) // 2, (src.height - ch) // 2
+                    ph_img = src.crop((cx, cy, cx + cw, cy + ch)).resize(fr["size"], Image.BILINEAR)
+                    frame = fr["frame"].copy()
+                    frame.paste(ph_img, fr["inset"])
+                    if fr.get("fade") is not None: frame.alpha_composite(fr["fade"])
+                    img.alpha_composite(frame, ((W - frame.width) // 2 + int(W * (1 - pp)), TOP - 20))
+                    p = ease((t - 0.18) / 0.4)
+                    img.alpha_composite(layer, (int(-W * (1 - p)), TOP - 20 + frame.height - 110))
+                else:
+                    y = TOP
+                    for k, r in enumerate(rows):
+                        p = ease((t - k * 0.18) / 0.35)
+                        if p > 0: img.alpha_composite(r, ((W - r.width) // 2 + int(-W * (1 - p)), y))
+                        y += r.height + 6
                     if FOLLOW and FT:
                         draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 900)))
-                else:
-                    draw_table(img, rows["table"], t, TOP - 20, table_highlights(rows["table"], words, t))
-            elif rows is None:
-                p = ease(t / 0.4)
-                img.alpha_composite(layer, (int(-W * (1 - p)), area_top + 20))
-            elif isinstance(rows, dict):  # story with photo: framed photo + headline panel
-                fr = rows
-                pp = ease((t - 0.08) / 0.4)
-                z = 1.0 + 0.08 * (t / max(dur, 0.1))
-                src = fr["photo"]
-                cw, ch = int(src.width / z), int(src.height / z)
-                cx, cy = (src.width - cw) // 2, (src.height - ch) // 2
-                ph_img = src.crop((cx, cy, cx + cw, cy + ch)).resize(fr["size"], Image.BILINEAR)
-                frame = fr["frame"].copy()
-                frame.paste(ph_img, fr["inset"])
-                if fr.get("fade") is not None: frame.alpha_composite(fr["fade"])
-                img.alpha_composite(frame, ((W - frame.width) // 2 + int(W * (1 - pp)), TOP - 20))
-                p = ease((t - 0.18) / 0.4)
-                img.alpha_composite(layer, (int(-W * (1 - p)), TOP - 20 + frame.height - 110))
-            else:
-                y = TOP
-                for k, r in enumerate(rows):
-                    p = ease((t - k * 0.18) / 0.35)
-                    if p > 0: img.alpha_composite(r, ((W - r.width) // 2 + int(-W * (1 - p)), y))
-                    y += r.height + 6
-                if FOLLOW and FT:
-                    draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 900)))
-            if kind != "recap":
-                cur = next((c for c in caps if c[0][0] - 0.05 <= t <= c[-1][1] + 0.25), None)
-                draw_caption(img, cur, t)
-            proc.stdin.write(img.tobytes())
-    proc.stdin.close(); proc.wait()
+                if kind != "recap":
+                    cur = next((c for c in caps if c[0][0] - 0.05 <= t <= c[-1][1] + 0.25), None)
+                    draw_caption(img, cur, t)
+                proc.stdin.write(img.tobytes())
+        proc.stdin.close(); proc.wait()
 
     # --- audio track
     lst = os.path.join(tmp, "list.txt")
@@ -1406,6 +1411,7 @@ def main():
                 if segments[i][0] == "recap" and FOLLOW and FT:
                     mix_sfx(p, [(FT["tF"], "whoosh", 0.35), (FT["tF"] + 0.06, "pop", 0.5), (FT["tP"], "whoosh", 0.25),
                                 (FT["tTap"], "click", 0.45), (FT["tOn"], "notify", 0.55), (FT["tOn"] + 0.02, "confetti", 0.4)])
+            if SFX.get(i): mix_sfx(p, SFX[i])
             fh.write(f"file '{p}'\n")
     voice = os.path.join(tmp, "voice.wav")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, voice], check=True)
