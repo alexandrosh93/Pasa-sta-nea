@@ -2,19 +2,20 @@
 
 What changes against the original renderer in build.py:
 - Safe-zone layout: nothing important under the Instagram/TikTok UI (top bar, right icons, bottom caption).
-  Compact header (logotype + date + small kouponaki logo) at y≈222, captions at y≈1290.
+  Clean header at y≈222 (logotype left, kouponaki right, small date next to the progress bar), photo ≈1100px tall
+  from under the header down to the captions (y≈1460), per-photo "focus": [x, y].
 - Progress bar (one segment per story) under the header.
 - Push transitions with motion blur and a green wipe band (no empty frames), whoosh on every change.
 - Photos: colour grade + vignette, Ken Burns that alternates direction, several photos per story
   ("images": [{"src", "at"}] switch when the voice says the word "at").
-- Stat callouts ("stat": {"value", "label", "at"}): badge that pops (count-up for numbers) with a pop sound.
+- Stat callouts ("stat": {"value", "label", "at", "side": "left"|"right"}): badge that pops (count-up for numbers) with a pop sound.
 - Captions: 2–3 words that pop in, active word on a green highlight.
 - Clean end card (numbered headlines) under the follow pop-up; cover image for the profile grid.
 """
 import math, os, re, subprocess
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
-HEAD_Y, PH, CAP_Y, TR = 222, 700, 1360, 0.32
+HEAD_Y, PHB, CAP_Y, TR = 222, 1500, 1460, 0.32     # PHB: full-bleed photo height (from y=0)
 
 
 def _clamp(x, a=0.0, b=1.0): return max(a, min(b, x))
@@ -40,28 +41,35 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             d.polygon([(ox, 0), (ox + 24, 0), (ox - 176, 200), (ox - 200, 200)], fill=B.GREEN + (90,))
         return img.convert("RGBA")
 
-    title = B.title_layer(rnd); title = title.resize((430, int(title.height * 430 / title.width)), Image.LANCZOS)
+    title = B.title_layer(rnd); title = title.resize((400, int(title.height * 400 / title.width)), Image.LANCZOS)
     badge = B.date_badge(B.reel_date(cfg), w=78, h=96) if cfg.get("show_date", True) else None
     lg = Image.open(os.path.join(B.HERE, cfg.get("logo", "assets/logo.png"))).convert("RGBA")
-    logo_s = lg.resize((300, int(lg.height * 300 / lg.width)), Image.LANCZOS)
+    logo_s = lg.resize((290, int(lg.height * 290 / lg.width)), Image.LANCZOS)
     TH = title.height
-    PROG_Y = HEAD_Y + TH + 12
-    PY = PROG_Y + 24
-    base = background()
-    base.alpha_composite(title, (46, HEAD_Y))
-    if badge: base.alpha_composite(badge, (46 + title.width + 6, HEAD_Y + (TH - badge.height) // 2))
-    base.alpha_composite(logo_s, (1024 - logo_s.width, HEAD_Y + (TH - logo_s.height) // 2))
+    PROG_Y = HEAD_Y + TH + 22
+    d0 = B.reel_date(cfg)
+    date_txt = f"{B.GR_DAYS[d0.weekday()]} {d0.day:02d} {B.GR_MONTHS[d0.month - 1]}" if cfg.get("show_date", True) else ""
+    df = font(B.F_XB_I, 30)
+    DATE_W = int(ImageDraw.Draw(Image.new("L", (1, 1))).textlength(date_txt, font=df)) + 22 if date_txt else 0
 
+    def header(img):
+        img.alpha_composite(title, (46, HEAD_Y))
+        img.alpha_composite(logo_s, (1024 - logo_s.width, HEAD_Y + (TH - logo_s.height) // 2 + 4))
+        if date_txt:
+            ImageDraw.Draw(img).text((48, PROG_Y + 4), date_txt, font=df, fill=(205, 220, 225), anchor="lm")
+
+    bg_plain = background()
+    base = bg_plain.copy(); header(base)
     stories = [s for k, s in segments if k == "story"]
     NS = len(stories)
 
     def progress(img, k, frac):
         d = ImageDraw.Draw(img)
-        x0, x1, gap = 46, 1024, 12
+        x0, x1, gap = 46 + DATE_W, 1024, 12
         w = (x1 - x0 - gap * (NS - 1)) / max(1, NS)
         for i in range(NS):
             a = x0 + i * (w + gap)
-            d.rounded_rectangle((a, PROG_Y, a + w, PROG_Y + 8), 4, fill=(255, 255, 255, 55))
+            d.rounded_rectangle((a, PROG_Y, a + w, PROG_Y + 8), 4, fill=(255, 255, 255, 70))
             f = 1.0 if i < k else (frac if i == k else 0.0)
             if f > 0: d.rounded_rectangle((a, PROG_Y, a + max(8, w * f), PROG_Y + 8), 4, fill=B.GREEN + (255,))
 
@@ -71,22 +79,27 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         im = ImageEnhance.Color(im).enhance(1.12)
         return im.filter(ImageFilter.UnsharpMask(radius=2, percent=60, threshold=2))
 
-    BW, BH = int(W * 1.14), int(PH * 1.14)
-    def load_photo(path):
+    PY = PROG_Y + 24                    # photo starts right under the header / progress bar
+    PHP = PHB - PY                      # ...and runs down to the captions (≈1100px)
+    BW, BH = int(W * 1.12), int(PHP * 1.12)
+    def load_photo(path, focus=None):
         im = Image.open(path).convert("RGB")
         k = max(BW / im.width, BH / im.height)
         im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1), Image.LANCZOS)
-        l, t = (im.width - BW) // 2, (im.height - BH) // 2
+        fx, fy = focus or (0.5, 0.45)
+        l = int(_clamp(fx * im.width - BW / 2, 0, im.width - BW)); t = int(_clamp(fy * im.height - BH / 2, 0, im.height - BH))
         return grade(im.crop((l, t, l + BW, t + BH)))
 
-    overlay = Image.new("RGBA", (W, PH), (0, 0, 0, 0)); od = ImageDraw.Draw(overlay)
-    for y in range(PH):
-        a = int(200 * ((y - (PH - 240)) / 240) ** 1.6) if y > PH - 240 else 0
+    overlay = Image.new("RGBA", (W, PHP), (0, 0, 0, 0)); od = ImageDraw.Draw(overlay)
+    for y in range(PHP):
+        a = int(120 * (1 - y / 50)) if y < 50 else 0                         # soft edge under the progress bar
+        if y > PHP - 520: a = max(a, int(255 * ((y - (PHP - 520)) / 520) ** 1.5))   # into the headline / captions
         od.line([(0, y), (W, y)], fill=B.BG2 + (a,))
-    vig = Image.new("L", (W, PH), 0); vd = ImageDraw.Draw(vig)
-    for i in range(60):                                       # soft side vignette
-        vd.rectangle((i, 0, W - 1 - i, PH), outline=int(110 * (1 - i / 60) ** 2))
-    overlay.alpha_composite(Image.merge("RGBA", (Image.new("L", (W, PH), 0),) * 3 + (vig,)))
+    vig = Image.new("L", (W, PHP), 0); vd = ImageDraw.Draw(vig)
+    for i in range(70):                                       # soft side vignette
+        vd.rectangle((i, 0, W - 1 - i, PHP), outline=int(120 * (1 - i / 70) ** 2))
+    overlay.alpha_composite(Image.merge("RGBA", (Image.new("L", (W, PHP), 0),) * 3 + (vig,)))
+    canvas0 = bg_plain
 
     def kb_crop(im, u, idx):
         """Ken Burns: zoom in on even photos, out on odd ones, with a slight pan."""
@@ -94,7 +107,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         cw, ch = BW / z, BH / z
         dx = (BW - cw) / 2 * (0.6 * (u - 0.5) * (1 if idx % 2 == 0 else -1))
         cx, cy = (BW - cw) / 2 + dx, (BH - ch) / 2
-        return im.crop((int(cx), int(cy), int(cx + cw), int(cy + ch))).resize((W, PH), Image.BILINEAR)
+        return im.crop((int(cx), int(cy), int(cx + cw), int(cy + ch))).resize((W, PHP), Image.BILINEAR)
 
     def word_time(words, key):
         k = B._norm(key.split()[0])
@@ -175,10 +188,10 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
     # ---------------------------------------------------------------- per-segment prep
     def prep_story(s, words):
         imgs = []
-        if s.get("image"): imgs.append((0.0, load_photo(os.path.join(B.HERE, s["image"]))))
+        if s.get("image"): imgs.append((0.0, load_photo(os.path.join(B.HERE, s["image"]), s.get("focus"))))
         for extra in s.get("images", []):
             ts = word_time(words, extra["at"]) if extra.get("at") else None
-            if ts is not None: imgs.append((max(0.0, ts - 0.1), load_photo(os.path.join(B.HERE, extra["src"]))))
+            if ts is not None: imgs.append((max(0.0, ts - 0.1), load_photo(os.path.join(B.HERE, extra["src"]), extra.get("focus"))))
         imgs.sort(key=lambda x: x[0])
         layer = B.story_layer(s, rnd, body=False, size=100)
         layer = layer.resize((int(layer.width * 0.86), int(layer.height * 0.86)), Image.LANCZOS)
@@ -195,10 +208,8 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             return [stat_card(f"{v}{suf}", st["label"]) for v in range(n + 1)]
         return [stat_card(st["value"], st["label"])]
 
-    def story_frame(P, t, dur, k):
-        img = base.copy()
-        progress(img, k, _clamp(t / dur))
-        # photo (crossfade on switches)
+    def story_frame(P, t, dur):
+        img = canvas0.copy()
         cur = max(i for i, (ts, _) in enumerate(P["imgs"]) if ts <= t) if P["imgs"] else -1
         if cur >= 0:
             ts, im = P["imgs"][cur]
@@ -206,25 +217,25 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             ph = kb_crop(im, _clamp((t - ts) / max(0.5, nxt - ts)), cur)
             if cur > 0 and t - ts < 0.25:
                 ps, pim = P["imgs"][cur - 1]
-                prev = kb_crop(pim, 1.0, cur - 1)
-                ph = Image.blend(prev, ph, _clamp((t - ts) / 0.25))
+                ph = Image.blend(kb_crop(pim, 1.0, cur - 1), ph, _clamp((t - ts) / 0.25))
             ph = ph.convert("RGBA"); ph.alpha_composite(overlay)
             img.alpha_composite(ph, (0, PY))
-        img.alpha_composite(P["layer"], (26, PY + PH - 132))
+        img.alpha_composite(P["layer"], (26, CAP_Y - 92 - P["layer"].height))
         st = P["stat"]
         if st and st["t"] <= t < st["t"] + st.get("hold", 3.0):
             u = t - st["t"]
             fr = P["stat_fr"]
             card = fr[min(len(fr) - 1, int(len(fr) * _clamp(u / 0.55)))] if len(fr) > 1 else fr[0]
             a = 1 - _clamp((u - st.get("hold", 3.0) + 0.3) / 0.3)
-            B.place(img, card, 905 - card.width / 2 + 20, PY + 150, 0.6 + 0.4 * B.ease_out_back(u / 0.35, 2.2), a)
+            cx = (26 + card.width / 2) if st.get("side") == "left" else (925 - card.width / 2)   # keep faces clear
+            B.place(img, card, cx, PY + 150, 0.6 + 0.4 * B.ease_out_back(u / 0.35, 2.2), a)
         return img
 
     def end_card():
-        L = base.copy()
+        L = bg_plain.copy()
         d = ImageDraw.Draw(L)
-        d.text((60, PY + 18), cfg.get("end_title", "ΣΗΜΕΡΑ ΕΙΔΑΜΕ"), font=font(B.F_XB_I, 46), fill=B.YELLOW)
-        y = PY + 96
+        d.text((60, PROG_Y + 50), cfg.get("end_title", "ΣΗΜΕΡΑ ΕΙΔΑΜΕ"), font=font(B.F_XB_I, 46), fill=B.YELLOW)
+        y = PROG_Y + 128
         for i, s in enumerate(stories, 1):
             d.rounded_rectangle((46, y, 930, y + 150), 26, fill=(8, 22, 28, 225), outline=(255, 255, 255, 30), width=2)
             d.ellipse((72, y + 33, 156, y + 117), fill=B.GREEN + (255,))
@@ -292,24 +303,34 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 P["stat_fr"] = stat_frames(P["stat"]); ev.append((P["stat"]["t"], "pop", 0.45))
             for ts, _ in P["imgs"][1:]: ev.append((ts, "whoosh", 0.18))
             ev.append((0.0, "whoosh", 0.38))
-            y0 = 0 if segments[si - 1][0] in ("intro", "hook") else PROG_Y - 6
+            from_intro = segments[si - 1][0] in ("intro", "hook")
             for f in range(n):
                 t = f / FPS
-                img = story_frame(P, t, dur, k_story)
-                ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci))
-                if last is not None and t < TR: img = push(last, img, t / TR, y0)
+                content = story_frame(P, t, dur)
+                ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
+                clean = content                      # header-free copy for the next push
+                frac = _clamp(t / dur)
+                if last is not None and t < TR:
+                    if from_intro:                   # the header arrives with the first story
+                        img = content.copy(); header(img); progress(img, k_story, frac)
+                        img = push(last, img, t / TR, 0)
+                    else:                            # header stays put, only the content moves
+                        img = push(last, content, t / TR, 0); header(img); progress(img, k_story, frac)
+                else:
+                    img = content.copy(); header(img); progress(img, k_story, frac)
                 proc.stdin.write(img.tobytes())
-            last = img
+            last = clean
         else:  # recap / end card
-            EC = end_card(); progress(EC, NS, 1.0)
+            EC = end_card()
             ev.append((0.0, "whoosh", 0.38))
             for f in range(n):
                 t = f / FPS
-                img = EC.copy()
-                if FT: B.draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 860)))
+                content = EC.copy()
                 if not FT or t < FT["tF"]:
-                    ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci))
-                if last is not None and t < TR: img = push(last, img, t / TR, PROG_Y - 6)
+                    ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
+                img = push(last, content, t / TR, 0) if (last is not None and t < TR) else content
+                header(img); progress(img, NS, 1.0)
+                if FT: B.draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 860)))
                 proc.stdin.write(img.tobytes())
             last = img
         if ev: sfx[si] = ev
