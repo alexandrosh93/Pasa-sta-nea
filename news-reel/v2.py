@@ -3,7 +3,7 @@
 What changes against the original renderer in build.py:
 - Safe-zone layout: nothing important under the Instagram/TikTok UI (top bar, right icons, bottom caption).
   Clean header at y≈222 (logotype left, kouponaki right, small date next to the progress bar), photo ≈1100px tall
-  from under the header down to the captions (y≈1460), per-photo "focus": [x, y].
+  from under the header down to the captions (y≈1460), per-photo "focus": [x, y], "fit": "contain" for graphics with text.
 - Progress bar (one segment per story) under the header.
 - Push transitions with motion blur and a green wipe band (no empty frames), whoosh on every change.
 - Photos: colour grade + vignette, Ken Burns that alternates direction, several photos per story
@@ -107,8 +107,15 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
     PY = PROG_Y + 24                    # photo starts right under the header / progress bar
     PHP = PHB - PY                      # ...and runs down to the captions (≈1100px)
     BW, BH = int(W * 1.12), int(PHP * 1.12)
-    def load_photo(path, focus=None):
+    def load_photo(path, focus=None, fit=None):
         im = Image.open(path).convert("RGB")
+        if fit == "contain":   # graphics with text: whole image at the top, blurred copy fills the rest
+            cov = im.resize((int(im.width * max(BW / im.width, BH / im.height)) + 1, int(im.height * max(BW / im.width, BH / im.height)) + 1), Image.LANCZOS)
+            l, t = (cov.width - BW) // 2, (cov.height - BH) // 2
+            canvas = ImageEnhance.Brightness(cov.crop((l, t, l + BW, t + BH)).filter(ImageFilter.GaussianBlur(28))).enhance(0.55)
+            fg = im.resize((BW, int(im.height * BW / im.width)), Image.LANCZOS)
+            canvas.paste(fg, (0, int(BH * 0.06)))
+            return grade(canvas)
         k = max(BW / im.width, BH / im.height)
         im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1), Image.LANCZOS)
         fx, fy = focus or (0.5, 0.45)
@@ -277,10 +284,10 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
     # ---------------------------------------------------------------- per-segment prep
     def prep_story(s, words):
         imgs = []
-        if s.get("image"): imgs.append((0.0, load_photo(os.path.join(B.HERE, s["image"]), s.get("focus"))))
+        if s.get("image"): imgs.append((0.0, load_photo(os.path.join(B.HERE, s["image"]), s.get("focus"), s.get("fit"))))
         for extra in s.get("images", []):
             ts = word_time(words, extra["at"]) if extra.get("at") else None
-            if ts is not None: imgs.append((max(0.0, ts - 0.1), load_photo(os.path.join(B.HERE, extra["src"]), extra.get("focus"))))
+            if ts is not None: imgs.append((max(0.0, ts - 0.1), load_photo(os.path.join(B.HERE, extra["src"]), extra.get("focus"), extra.get("fit"))))
         imgs.sort(key=lambda x: x[0])
         layer = banner(s, size=int(s.get("banner_size", 92)))
         st = None
