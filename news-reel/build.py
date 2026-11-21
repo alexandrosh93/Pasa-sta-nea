@@ -678,6 +678,23 @@ def _flag_wave(code, width):
     out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10))); out.alpha_composite(im, (20, 20))
     return out
 
+def _colors_disc(cols, D=190):
+    """Team-colours disc (no club crests): two colours split on the diagonal, white ring, soft shadow."""
+    S4 = D * 4
+    c = [tuple(int(h.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)) if isinstance(h, str) else tuple(h) for h in cols]
+    disc = Image.new("RGBA", (S4, S4), (0, 0, 0, 0)); d = ImageDraw.Draw(disc)
+    d.ellipse((0, 0, S4 - 1, S4 - 1), fill=c[0] + (255,))
+    if len(c) > 1:
+        half = Image.new("L", (S4, S4), 0); ImageDraw.Draw(half).polygon([(S4, 0), (S4, S4), (0, S4)], fill=255)
+        ring = Image.new("L", (S4, S4), 0); ImageDraw.Draw(ring).ellipse((0, 0, S4 - 1, S4 - 1), fill=255)
+        disc.paste(c[1] + (255,), (0, 0), Image.composite(half, Image.new("L", (S4, S4), 0), ring))
+    ImageDraw.Draw(disc).ellipse((0, 0, S4 - 1, S4 - 1), outline=(255, 255, 255, 255), width=S4 // 20)
+    disc = disc.resize((D, D), Image.LANCZOS)
+    out = Image.new("RGBA", (D + 40, D + 40), (0, 0, 0, 0))
+    sh = Image.new("RGBA", out.size, (0, 0, 0, 0)); ImageDraw.Draw(sh).ellipse((20, 28, D + 20, D + 28), fill=(0, 0, 0, 150))
+    out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10))); out.alpha_composite(disc, (20, 20))
+    return out
+
 def scoreboard_card(sb):
     """Final-score card for the hook: flags, team names, big score (hook.scoreboard in script.json)."""
     CWd, CHt = 980, 470
@@ -694,9 +711,11 @@ def scoreboard_card(sb):
     para(d, (ox + (CWd - lw) / 2, oy - 34), lw, 66, 14, YELLOW)
     d.text((ox + CWd / 2 + 7, oy - 1), lab, font=lf, fill=INK, anchor="mm")
     cy = oy + 205
-    for code, name, cx in ((sb.get("home_flag"), sb["home"], ox + 175), (sb.get("away_flag"), sb["away"], ox + CWd - 175)):
-        if code:
-            disc = _flag_wave(code, 210); im.alpha_composite(disc, (int(cx - disc.width / 2), int(cy - disc.height / 2 - 10)))
+    for side, name, cx in (("home", sb["home"], ox + 175), ("away", sb["away"], ox + CWd - 175)):
+        code, cols = sb.get(side + "_flag"), sb.get(side + "_colors")
+        disc = _flag_wave(code, 210) if code else (_colors_disc(cols, 170) if cols else None)
+        if disc is not None:
+            im.alpha_composite(disc, (int(cx - disc.width / 2), int(cy - disc.height / 2 - 10)))
         nf = font(F_BLACK_I, 52)
         while nf.size > 30 and d.textlength(name, font=nf) > 300: nf = font(F_BLACK_I, nf.size - 2)
         d.text((cx, oy + 365), name, font=nf, fill=WHITE, anchor="mm")

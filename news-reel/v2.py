@@ -236,7 +236,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             f = font(B.F_BLACK_I, 74)
             m = ImageDraw.Draw(Image.new("L", (1, 1)))
             words = [w for _, _, w in chunk]
-            sp = m.textlength(" ", font=f)
+            sp = m.textlength(" ", font=f) + 14          # room for the highlight box between words
             ws = [m.textlength(w, font=f) for w in words]
             tw = int(sum(ws) + sp * (len(ws) - 1)) + 60
             L = Image.new("RGBA", (tw, 130), (0, 0, 0, 0))
@@ -297,10 +297,11 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         return dict(imgs=imgs, layer=layer, stat=st)
 
     def stat_frames(st):
-        m = re.match(r"(\d+)(.*)", st["value"])
-        if m:
-            n, suf = int(m.group(1)), m.group(2)
-            return [stat_card(f"{v}{suf}", st["label"]) for v in range(n + 1)]
+        m = re.match(r"([\d.]+)(.*)", st["value"])
+        if m and m.group(1).replace(".", "").isdigit():
+            n, suf, dots = int(m.group(1).replace(".", "")), m.group(2), "." in m.group(1)
+            vals = sorted(set(int(round(n * i / 24)) for i in range(25)))        # at most 25 steps for big numbers
+            return [stat_card((f"{v:,}".replace(",", ".") if dots else str(v)) + suf, st["label"]) for v in vals]
         return [stat_card(st["value"], st["label"])]
 
     def story_frame(P, t, dur, tg):
