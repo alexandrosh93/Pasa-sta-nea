@@ -718,11 +718,8 @@ def scoreboard_card(sb):
     CWd, CHt = 980, 470
     im = Image.new("RGBA", (CWd + 80, CHt + 110), (0, 0, 0, 0))
     ox, oy = 40, 50
-    shadow = Image.new("RGBA", im.size, (0, 0, 0, 0))        # soft drop shadow only: no border, no glow
-    ImageDraw.Draw(shadow).rounded_rectangle((ox, oy + 14, ox + CWd, oy + CHt + 14), 40, fill=(0, 0, 0, 150))
-    im.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(20)))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle((ox, oy, ox + CWd, oy + CHt), 40, fill=(8, 22, 28, 238))
+    d = ImageDraw.Draw(im)                                    # see-through card: no border, no glow, no shadow
+    d.rounded_rectangle((ox, oy, ox + CWd, oy + CHt), 40, fill=(8, 22, 28, int(255 * float(sb.get("opacity", 0.5)))))
     # label on the top edge
     lab = sb.get("label", "ΤΕΛΙΚΟ")
     lf = font(F_XB_I, 44); lw = int(d.textlength(lab, font=lf)) + 70
@@ -736,14 +733,14 @@ def scoreboard_card(sb):
             im.alpha_composite(disc, (int(cx - disc.width / 2), int(cy - disc.height / 2 - 10)))
         nf = font(F_BLACK_I, 52)
         while nf.size > 30 and d.textlength(name, font=nf) > 300: nf = font(F_BLACK_I, nf.size - 2)
-        d.text((cx, oy + 365), name, font=nf, fill=WHITE, anchor="mm")
+        d.text((cx, oy + 365), name, font=nf, fill=WHITE, anchor="mm", stroke_width=3, stroke_fill=INK)
     h, a = sb["score"]
     sf = font(F_BLACK_I, 250)
     d.text((ox + CWd / 2 - 105, cy + 8), str(h), font=sf, fill=WHITE, anchor="mm", stroke_width=4, stroke_fill=INK)
     d.text((ox + CWd / 2 + 115, cy + 8), str(a), font=sf, fill=YELLOW, anchor="mm", stroke_width=4, stroke_fill=INK)
     d.rounded_rectangle((ox + CWd / 2 - 18, cy + 2, ox + CWd / 2 + 26, cy + 20), 8, fill=(150, 170, 180, 255))
     if sb.get("sub"):
-        d.text((ox + CWd / 2, oy + CHt - 38), sb["sub"], font=font(F_XB_I, 34), fill=(150, 170, 180), anchor="mm")
+        d.text((ox + CWd / 2, oy + CHt - 38), sb["sub"], font=font(F_XB_I, 34), fill=(200, 215, 222), anchor="mm", stroke_width=2, stroke_fill=INK)
     return im
 
 _grad = None
