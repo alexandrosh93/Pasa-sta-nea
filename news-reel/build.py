@@ -13,7 +13,7 @@ Voice ("engine" in script.json):
 Questions get a rising end (pyworld) whatever the engine.
 Needs: ffmpeg, Pillow, numpy, pyworld (+ edge-tts for the edge engine).
 """
-import asyncio, json, math, os, random, re, shutil, subprocess, sys, tempfile
+import asyncio, json, math, os, random, re, shutil, subprocess, sys, tempfile, urllib.request
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -695,16 +695,34 @@ def _colors_disc(cols, D=190):
     out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10))); out.alpha_composite(disc, (20, 20))
     return out
 
+def crest_img(slug, size=170):
+    """Club crest (transparent PNG, no ring or border) with a soft shadow. Downloaded once from kerkida.net into
+    crests/<slug>.png (e.g. omonoia, apoel, aris, nea-salamina, pafos, anorthosi, ael, apollon, omonoia-ara, omonoia29m)."""
+    os.makedirs(os.path.join(HERE, "crests"), exist_ok=True)
+    path = os.path.join(HERE, "crests", os.path.basename(slug).split("?")[0].rsplit(".", 1)[0] + ".png")
+    if not os.path.exists(path):
+        url = slug if slug.startswith("http") else f"https://www.kerkida.net/sites/default/files/2019-05/{slug}.png"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as r, open(path, "wb") as fh: fh.write(r.read())
+    im = Image.open(path).convert("RGBA"); im = im.crop(im.getbbox())
+    k = size / max(im.size)
+    im = im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))), Image.LANCZOS)
+    a = im.getchannel("A"); im = im.filter(ImageFilter.UnsharpMask(radius=1.6, percent=70, threshold=1)); im.putalpha(a)
+    out = Image.new("RGBA", (im.width + 40, im.height + 40), (0, 0, 0, 0))
+    sh = Image.new("RGBA", out.size, (0, 0, 0, 0)); sh.paste((0, 0, 0, 150), (20, 28), im)
+    out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10))); out.alpha_composite(im, (20, 20))
+    return out
+
 def scoreboard_card(sb):
     """Final-score card for the hook: flags, team names, big score (hook.scoreboard in script.json)."""
     CWd, CHt = 980, 470
     im = Image.new("RGBA", (CWd + 80, CHt + 110), (0, 0, 0, 0))
     ox, oy = 40, 50
-    glow = Image.new("RGBA", im.size, (0, 0, 0, 0))
-    ImageDraw.Draw(glow).rounded_rectangle((ox, oy, ox + CWd, oy + CHt), 40, fill=GREEN + (120,))
-    im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(26)))
+    shadow = Image.new("RGBA", im.size, (0, 0, 0, 0))        # soft drop shadow only: no border, no glow
+    ImageDraw.Draw(shadow).rounded_rectangle((ox, oy + 14, ox + CWd, oy + CHt + 14), 40, fill=(0, 0, 0, 150))
+    im.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(20)))
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle((ox, oy, ox + CWd, oy + CHt), 40, fill=(8, 22, 28, 242), outline=GREEN + (255,), width=6)
+    d.rounded_rectangle((ox, oy, ox + CWd, oy + CHt), 40, fill=(8, 22, 28, 238))
     # label on the top edge
     lab = sb.get("label", "ΤΕΛΙΚΟ")
     lf = font(F_XB_I, 44); lw = int(d.textlength(lab, font=lf)) + 70
@@ -712,8 +730,8 @@ def scoreboard_card(sb):
     d.text((ox + CWd / 2 + 7, oy - 1), lab, font=lf, fill=INK, anchor="mm")
     cy = oy + 205
     for side, name, cx in (("home", sb["home"], ox + 175), ("away", sb["away"], ox + CWd - 175)):
-        code, cols = sb.get(side + "_flag"), sb.get(side + "_colors")
-        disc = _flag_wave(code, 210) if code else (_colors_disc(cols, 170) if cols else None)
+        code, cols, logo = sb.get(side + "_flag"), sb.get(side + "_colors"), sb.get(side + "_logo")
+        disc = crest_img(logo, 180) if logo else (_flag_wave(code, 210) if code else (_colors_disc(cols, 170) if cols else None))
         if disc is not None:
             im.alpha_composite(disc, (int(cx - disc.width / 2), int(cy - disc.height / 2 - 10)))
         nf = font(F_BLACK_I, 52)
