@@ -15,7 +15,8 @@ What changes against the original renderer in build.py:
 import math, os, re, subprocess
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
-HEAD_Y, PHB, CAP_Y, TR = 222, 1500, 1460, 0.32     # PHB: full-bleed photo height (from y=0)
+HEAD_Y, PHB, CAP_Y, TR = 222, 1628, 1548, 0.32     # PHB: photo bottom; CAP_Y: captions (TikTok shows down to ≈1740)
+MX, RX = 76, 1004                                  # side margins: tall phones crop ≈55px off each side
 
 
 def _clamp(x, a=0.0, b=1.0): return max(a, min(b, x))
@@ -78,10 +79,10 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
     DATE_W = int(ImageDraw.Draw(Image.new("L", (1, 1))).textlength(date_txt, font=df)) + 22 if date_txt else 0
 
     def header(img):
-        img.alpha_composite(title, (46, HEAD_Y))
-        img.alpha_composite(logo_s, (1024 - logo_s.width, HEAD_Y + (TH - logo_s.height) // 2 + 4))
+        img.alpha_composite(title, (MX, HEAD_Y))
+        img.alpha_composite(logo_s, (RX - logo_s.width, HEAD_Y + (TH - logo_s.height) // 2 + 4))
         if date_txt:
-            ImageDraw.Draw(img).text((48, PROG_Y + 4), date_txt, font=df, fill=(205, 220, 225), anchor="lm")
+            ImageDraw.Draw(img).text((MX + 2, PROG_Y + 4), date_txt, font=df, fill=(205, 220, 225), anchor="lm")
 
     bg_plain = background()
     base = bg_plain.copy(); header(base)
@@ -90,7 +91,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
 
     def progress(img, k, frac):
         d = ImageDraw.Draw(img)
-        x0, x1, gap = 46 + DATE_W, 1024, 12
+        x0, x1, gap = MX + DATE_W, RX, 12
         w = (x1 - x0 - gap * (NS - 1)) / max(1, NS)
         for i in range(NS):
             a = x0 + i * (w + gap)
@@ -200,14 +201,16 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         lab = bar_img(cfg.get("ticker_label", "ΠΑΣΑ στα ΝΕΑ"), font(B.F_BLACK_I, 34), B.GREEN, skew=14, padx=18, hpad=1.6)
         return dict(text=im, sw=sw, label=lab)
 
-    TICK_Y = 1528
+    TICK_Y = 1628
     def draw_ticker(img, T, tg):
         d = ImageDraw.Draw(img)
         d.rectangle((0, TICK_Y, W, TICK_Y + 58), fill=(6, 16, 20, 235))
         d.line([(0, TICK_Y), (W, TICK_Y)], fill=B.GREEN + (255,), width=3)
         off = int(tg * 115) % T["sw"]
         img.alpha_composite(T["text"].crop((off, 0, off + W, 58)), (0, TICK_Y))
-        img.alpha_composite(T["label"], (-8, TICK_Y - 2))
+        lx = MX - 24                       # label text clear of the TikTok side crop; green fill out to the edge
+        d.rectangle((0, TICK_Y - 2, lx + 14, TICK_Y - 2 + int(34 * 1.6)), fill=B.GREEN + (255,))
+        img.alpha_composite(T["label"], (lx, TICK_Y - 2))
 
     # ---------------------------------------------------------------- quote cards (who said what)
     def _col(c, default):
@@ -380,20 +383,20 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             if fl > 0: ph.alpha_composite(Image.new("RGBA", (W, PHP), (255, 255, 255, int(255 * fl))))
             ph.alpha_composite(overlay)
             img.alpha_composite(ph, (0, PY))
-        draw_banner(img, P["layer"], 30, CAP_Y - 70, bu)
+        draw_banner(img, P["layer"], MX - 10, CAP_Y - 70, bu)
         st = P["stat"]
         if st and st["t"] <= t < st["t"] + st.get("hold", 3.0):
             u = t - st["t"]
             fr = P["stat_fr"]
             card = fr[min(len(fr) - 1, int(len(fr) * _clamp(u / 0.55)))] if len(fr) > 1 else fr[0]
             a = 1 - _clamp((u - st.get("hold", 3.0) + 0.3) / 0.3)
-            cx = (26 + card.width / 2) if st.get("side") == "left" else (925 - card.width / 2)   # keep faces clear
+            cx = (MX - 24 + card.width / 2) if st.get("side") == "left" else (925 - card.width / 2)   # keep faces clear
             B.place(img, card, cx, PY + 150, 0.6 + 0.4 * B.ease_out_back(u / 0.35, 2.2), a)
         qt = P.get("quote")
         if qt and qt["t"] <= t < qt["t"] + qt["hold"]:
             u = t - qt["t"]; c = qt["card"]
             a = 1 - _clamp((u - qt["hold"] + 0.3) / 0.3)
-            B.place(img, c, c.width / 2 + 6, PY + 30 + c.height / 2, 0.88 + 0.12 * B.ease_out_back(u / 0.4, 2.0), min(1.0, u / 0.12) * a)
+            B.place(img, c, c.width / 2 + MX - 30, PY + 30 + c.height / 2, 0.88 + 0.12 * B.ease_out_back(u / 0.4, 2.0), min(1.0, u / 0.12) * a)
         return img
 
     def next_chip(text):
@@ -442,7 +445,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
     def end_card():
         L = bg_plain.copy()
         t = bar_img(cfg.get("end_title", "ΣΗΜΕΡΑ ΕΙΔΑΜΕ"), font(B.F_XB_I, 40), (8, 22, 28), B.YELLOW, skew=16, padx=22, hpad=1.45)
-        L.alpha_composite(t, (40, PROG_Y + 46))
+        L.alpha_composite(t, (MX - 8, PROG_Y + 46))
         y = PROG_Y + 46 + t.height
         for i, s in enumerate(stories, 1):
             num = bar_img(str(i), font(B.F_BLACK_I, 76), B.GREEN, skew=20, padx=22)
@@ -450,7 +453,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             f = font(B.F_BLACK_I, 66)
             while f.size > 34 and _m.textlength(text, font=f) + 84 > 880 - num.width: f = font(B.F_BLACK_I, f.size - 2)
             row = bar_img(text, f, B.WHITE, skew=20)
-            L.alpha_composite(num, (40, y)); L.alpha_composite(row, (40 + num.width - 30, y + (num.height - row.height) // 2))
+            L.alpha_composite(num, (MX - 8, y)); L.alpha_composite(row, (MX - 8 + num.width - 30, y + (num.height - row.height) // 2))
             y += num.height + 10
         return L
 
@@ -484,7 +487,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             for i, c in enumerate(CC):
                 tw = word_time(words, c["at"]) if c.get("at") else None
                 QT.append(tw if tw is not None else (0.1 if i == 0 else 0.1 + 1.4 * i))
-            CY = 565 if ck == "scoreboards" else 545
+            CY = 585 if ck == "scoreboards" else 565
             for tq in QT[1:]: ev.append((tq, "hit", 0.4))
             cover_at = max([0.6] + [tq + 0.55 for tq in QT])
             if QC: ev.append((QT[0], "pop", 0.35))
@@ -492,7 +495,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 t = f / FPS
                 img = B.hook_frame(bg, t, dur)
                 pulse = max([1.0] + [1 + 0.07 * (1 - B.ease((t - tw) / 0.35)) for tw in HP if 0 <= t - tw < 0.35])
-                img.alpha_composite(logo_s, (46, HEAD_Y + 10))
+                img.alpha_composite(logo_s, (MX, HEAD_Y + 10))
                 if badge: img.alpha_composite(badge, (930 - badge.width, HEAD_Y - 6))
                 punch = 1.0 + 0.07 * (1 - B.ease(t / 0.25))
                 shake = int(9 * math.sin(t * 60) * max(0, 1 - t / 0.35))
@@ -508,11 +511,11 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                             B.place(img, c, W / 2 + side * 34 * (1 - B.ease(u / 0.4)), y0 + (c.height - 40) / 2 + 20, 0.9 + 0.1 * e, a)
                         y0 += c.height - 40 + gap
                 L = layer if punch == 1.0 else layer.resize((int(layer.width * punch), int(layer.height * punch)), Image.BILINEAR)
-                img.alpha_composite(L, (34 + shake - (L.width - layer.width) // 2, (850 if (SB is not None or QC) else 760) - (L.height - layer.height) // 2))
+                img.alpha_composite(L, (MX - 12 + shake - (L.width - layer.width) // 2, (880 if (SB is not None or QC) else 800) - (L.height - layer.height) // 2))
                 draw_ticker(img, TK, T0 + t)
                 if not cover_saved and t >= (cover_at if QC else 0.6):   # cover for the profile grid: no caption on it
                     img.convert("RGB").save(os.path.splitext(out)[0] + "-cover.jpg", quality=95); cover_saved = True
-                ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci), 1350)
+                ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci), 1440)
                 if f == 0: hook_first = img.copy()
                 proc.stdin.write(img.tobytes()); last = img
             for tw in HP: ev.append((tw, "hit", 0.35))
@@ -568,7 +571,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 content = story_frame(P, t, dur, T0 + t)
                 if chip is not None and t >= cs:
                     q = B.ease((t - cs) / 0.3)
-                    x = 26 - (chip.width + 40) * (1 - q) if chip_left else 925 - chip.width + 30 + (chip.width + 60) * (1 - q)
+                    x = MX - 14 - (chip.width + 40) * (1 - q) if chip_left else 925 - chip.width + 30 + (chip.width + 60) * (1 - q)
                     content.alpha_composite(chip, (int(x), PY + 18))
                 draw_ticker(content, TK, T0 + t)
                 ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
@@ -587,14 +590,14 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         else:  # recap / end card
             CTA = cta_card(cfg["comment_cta"]) if cfg.get("comment_cta") else None
             EC = bg_plain.copy() if CTA else end_card()
-            cta_bottom = PROG_Y + 40 + (CTA["h"] if CTA else 0)
-            fy = int(cfg.get("follow", {}).get("y", max(1150, cta_bottom + 175) if CTA else 1150))
+            cta_bottom = PROG_Y + 80 + (CTA["h"] if CTA else 0)
+            fy = int(cfg.get("follow", {}).get("y", max(1190, cta_bottom + 175) if CTA else 1190))
             ev.append((0.0, "whoosh", 0.38))
             if LOOP and hook_first is not None: ev.append((dur - LOOP, "whoosh", 0.35))
             for f in range(n):
                 t = f / FPS
                 content = EC.copy()
-                if CTA: draw_banner(content, CTA, 40, cta_bottom, t - 0.15)
+                if CTA: draw_banner(content, CTA, MX - 8, cta_bottom, t - 0.15)
                 draw_ticker(content, TK, T0 + t)
                 if not FT or t < FT["tF"]:
                     ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
