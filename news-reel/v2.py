@@ -209,6 +209,33 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         img.alpha_composite(T["text"].crop((off, 0, off + W, 58)), (0, TICK_Y))
         img.alpha_composite(T["label"], (-8, TICK_Y - 2))
 
+    # ---------------------------------------------------------------- quote cards (who said what)
+    def _col(c, default):
+        if isinstance(c, str): return tuple(int(c.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        return tuple(c) if c else default
+
+    def quote_card(q, width=900):
+        col = _col(q.get("color"), B.GREEN)
+        nf, tf, sf = font(B.F_XB_I, 34), font(B.F_BLACK_I, 74), font(B.F_SEMI, 33)
+        lines = B.wrap(q["text"], tf, width - 120)
+        while len(lines) > 2 and tf.size > 46:
+            tf = font(B.F_BLACK_I, tf.size - 4); lines = B.wrap(q["text"], tf, width - 120)
+        sub = B.wrap(q["sub"], sf, width - 120) if q.get("sub") else []
+        nw = int(_m.textlength(q["who"], font=nf)) + 46
+        lh, sh_ = int(tf.size * 1.08), int(sf.size * 1.3)
+        h = 24 + 50 + 16 + lh * len(lines) + ((10 + sh_ * len(sub)) if sub else 0) + 26
+        im = Image.new("RGBA", (width + 40, h + 40), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+        d.rounded_rectangle((20, 20, 20 + width, 20 + h), 30, fill=(8, 22, 28, int(255 * float(q.get("opacity", 0.62)))))
+        d.rounded_rectangle((20, 20, 36, 20 + h), 8, fill=col + (255,))
+        d.rounded_rectangle((64, 44, 64 + nw, 44 + 50), 25, fill=col + (255,))
+        d.text((64 + nw / 2, 44 + 26), q["who"], font=nf, fill=B.INK if sum(col) > 380 else B.WHITE, anchor="mm")
+        y = 44 + 50 + 14
+        for ln in lines:
+            d.text((64, y), ln, font=tf, fill=B.WHITE, stroke_width=3, stroke_fill=B.INK); y += lh
+        for ln in sub:
+            d.text((64, y + 6), ln, font=sf, fill=(205, 220, 226), stroke_width=2, stroke_fill=B.INK); y += sh_
+        return im
+
     # ---------------------------------------------------------------- stat badge
     def stat_card(value, label):
         f = font(B.F_BLACK_I, 118)
@@ -294,9 +321,13 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         if s.get("stat"):
             ts = word_time(words, s["stat"]["at"])
             if ts is not None: st = dict(t=ts, **s["stat"])
+        qt = None
+        if s.get("quote"):
+            q = s["quote"]; tq = word_time(words, q["at"]) if q.get("at") else 0.3
+            if tq is not None: qt = dict(t=tq, card=quote_card(q), hold=float(q.get("hold", 6.0)))
         hits = [tw for tw in (word_time(words, k) for k in s.get("punch_at", [])) if tw is not None]
-        punch = [(ts, False) for ts, _ in imgs[1:]] + ([(st["t"], True)] if st else []) + [(tw, True) for tw in hits]
-        return dict(imgs=imgs, layer=layer, stat=st, punch=punch, hits=hits)
+        punch = [(ts, False) for ts, _ in imgs[1:]] + ([(st["t"], True)] if st else []) + [(tw, True) for tw in hits] + ([(qt["t"], True)] if qt else [])
+        return dict(imgs=imgs, layer=layer, stat=st, punch=punch, hits=hits, quote=qt)
 
     def stat_frames(st):
         m = re.match(r"([\d.]+)(.*)", st["value"])
@@ -339,6 +370,11 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             a = 1 - _clamp((u - st.get("hold", 3.0) + 0.3) / 0.3)
             cx = (26 + card.width / 2) if st.get("side") == "left" else (925 - card.width / 2)   # keep faces clear
             B.place(img, card, cx, PY + 150, 0.6 + 0.4 * B.ease_out_back(u / 0.35, 2.2), a)
+        qt = P.get("quote")
+        if qt and qt["t"] <= t < qt["t"] + qt["hold"]:
+            u = t - qt["t"]; c = qt["card"]
+            a = 1 - _clamp((u - qt["hold"] + 0.3) / 0.3)
+            B.place(img, c, c.width / 2 + 6, PY + 30 + c.height / 2, 0.88 + 0.12 * B.ease_out_back(u / 0.4, 2.0), min(1.0, u / 0.12) * a)
         return img
 
     def next_chip(text):
@@ -422,6 +458,12 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             layer = banner_flat(banner(s, size=min(124, int(s.get("size", 124))), maxw=880))
             SB = B.scoreboard_card(s["scoreboard"]) if s.get("scoreboard") else None
             HP = [tw for tw in (word_time(words, k) for k in s.get("punch_at", [])) if tw is not None]
+            QC = [quote_card(q, width=940) for q in s.get("quotes", [])]
+            QT = [0.1] + [(word_time(words, q["at"]) if q.get("at") else 0.1 + 1.4 * i) or 1.5 for i, q in list(enumerate(s.get("quotes", [])))[1:]]
+            QT = QT[:len(QC)]
+            for tq in QT[1:]: ev.append((tq, "hit", 0.4))
+            cover_at = max([0.6] + [tq + 0.55 for tq in QT])
+            if QC: ev.append((QT[0], "pop", 0.35))
             for f in range(n):
                 t = f / FPS
                 img = B.hook_frame(bg, t, dur)
@@ -432,10 +474,19 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 shake = int(9 * math.sin(t * 60) * max(0, 1 - t / 0.35))
                 if SB is not None:
                     B.place(img, SB, W / 2 + shake, 560, ((1 + 0.6 * (punch - 1)) * 0.94 + 0.03 * t / dur) * pulse)
+                if QC:
+                    gap = 22; tot = sum(c.height - 40 for c in QC) + gap * (len(QC) - 1); y0 = 545 - tot / 2
+                    for i, (c, tq) in enumerate(zip(QC, QT)):
+                        u = t - tq
+                        if u > 0:
+                            e = B.ease_out_back(u / 0.4, 2.0); a = min(1.0, u / 0.1)
+                            side = -1 if i % 2 == 0 else 1
+                            B.place(img, c, W / 2 + side * 34 * (1 - B.ease(u / 0.4)), y0 + (c.height - 40) / 2 + 20, 0.9 + 0.1 * e, a)
+                        y0 += c.height - 40 + gap
                 L = layer if punch == 1.0 else layer.resize((int(layer.width * punch), int(layer.height * punch)), Image.BILINEAR)
-                img.alpha_composite(L, (34 + shake - (L.width - layer.width) // 2, (850 if SB is not None else 760) - (L.height - layer.height) // 2))
+                img.alpha_composite(L, (34 + shake - (L.width - layer.width) // 2, (850 if (SB is not None or QC) else 760) - (L.height - layer.height) // 2))
                 draw_ticker(img, TK, T0 + t)
-                if not cover_saved and t >= 0.6:   # cover for the profile grid: no caption on it
+                if not cover_saved and t >= (cover_at if QC else 0.6):   # cover for the profile grid: no caption on it
                     img.convert("RGB").save(os.path.splitext(out)[0] + "-cover.jpg", quality=95); cover_saved = True
                 ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci), 1350)
                 if f == 0: hook_first = img.copy()

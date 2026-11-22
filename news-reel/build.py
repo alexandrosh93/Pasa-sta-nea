@@ -1245,7 +1245,7 @@ def main():
             words = restore_words(words, pron)
             if kind == "intro" and intro_video:
                 lead = float(intro.get("voice_at", 1.5))
-                dur = max(float(intro.get("min_length", 3.5)), duration(wav) + lead + 0.3)
+                dur = max(float(intro.get("min_length", 3.5)), duration(wav) + lead + float(intro.get("tail", 0.3)))
                 dur = min(dur, duration(intro_video) - intro_start)
             elif kind == "hook":
                 lead = 0.05
