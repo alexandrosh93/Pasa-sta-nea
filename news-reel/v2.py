@@ -294,7 +294,9 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
         if s.get("stat"):
             ts = word_time(words, s["stat"]["at"])
             if ts is not None: st = dict(t=ts, **s["stat"])
-        return dict(imgs=imgs, layer=layer, stat=st)
+        hits = [tw for tw in (word_time(words, k) for k in s.get("punch_at", [])) if tw is not None]
+        punch = [(ts, False) for ts, _ in imgs[1:]] + ([(st["t"], True)] if st else []) + [(tw, True) for tw in hits]
+        return dict(imgs=imgs, layer=layer, stat=st, punch=punch, hits=hits)
 
     def stat_frames(st):
         m = re.match(r"([\d.]+)(.*)", st["value"])
@@ -304,8 +306,9 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             return [stat_card((f"{v:,}".replace(",", ".") if dots else str(v)) + suf, st["label"]) for v in vals]
         return [stat_card(st["value"], st["label"])]
 
-    def story_frame(P, t, dur, tg):
+    def story_frame(P, t, dur, tg, bu="t"):
         img = canvas0.copy()
+        if bu == "t": bu = None if P.get("banner_shown") else t
         cur = max(i for i, (ts, _) in enumerate(P["imgs"]) if ts <= t) if P["imgs"] else -1
         if cur >= 0:
             ts, im = P["imgs"][cur]
@@ -314,9 +317,20 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             if cur > 0 and t - ts < 0.25:
                 ps, pim = P["imgs"][cur - 1]
                 ph = Image.blend(kb_crop(pim, 1.0, cur - 1), ph, _clamp((t - ts) / 0.25))
-            ph = ph.convert("RGBA"); ph.alpha_composite(overlay)
+            sc, fl = 1.0, 0.0                       # punch-in (+ short flash) on switches, numbers and key words
+            for te, flash in P.get("punch", []):
+                dt = t - te
+                if 0 <= dt < 0.35: sc = max(sc, 1 + 0.06 * (1 - B.ease(dt / 0.35)))
+                if flash and 0 <= dt < 0.16: fl = max(fl, 0.30 * (1 - dt / 0.16))
+            if sc > 1.001:
+                big = ph.resize((int(W * sc), int(PHP * sc)), Image.BILINEAR)
+                ox, oy = (big.width - W) // 2, (big.height - PHP) // 2
+                ph = big.crop((ox, oy, ox + W, oy + PHP))
+            ph = ph.convert("RGBA")
+            if fl > 0: ph.alpha_composite(Image.new("RGBA", (W, PHP), (255, 255, 255, int(255 * fl))))
+            ph.alpha_composite(overlay)
             img.alpha_composite(ph, (0, PY))
-        draw_banner(img, P["layer"], 30, CAP_Y - 70, t)
+        draw_banner(img, P["layer"], 30, CAP_Y - 70, bu)
         st = P["stat"]
         if st and st["t"] <= t < st["t"] + st.get("hold", 3.0):
             u = t - st["t"]
@@ -326,6 +340,49 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             cx = (26 + card.width / 2) if st.get("side") == "left" else (925 - card.width / 2)   # keep faces clear
             B.place(img, card, cx, PY + 150, 0.6 + 0.4 * B.ease_out_back(u / 0.35, 2.2), a)
         return img
+
+    def next_chip(text):
+        lf, tf = font(B.F_XB_I, 29), font(B.F_BLACK_I, 38)
+        lab = cfg.get("next_label", "ΕΠΟΜΕΝΟ")
+        while tf.size > 24 and _m.textlength(text, font=tf) > 540: tf = font(B.F_BLACK_I, tf.size - 2)
+        lw, tw, h = _m.textlength(lab, font=lf), _m.textlength(text, font=tf), 72
+        w = int(8 + lw + 28 + 16 + 16 + 14 + tw + 26)
+        im = Image.new("RGBA", (w + 30, h + 30), (0, 0, 0, 0))
+        sh = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        ImageDraw.Draw(sh).rounded_rectangle((6, 10, w + 6, h + 10), h // 2, fill=(0, 0, 0, 140))
+        im.alpha_composite(sh.filter(ImageFilter.GaussianBlur(8)))
+        d = ImageDraw.Draw(im)
+        d.rounded_rectangle((0, 0, w, h), h // 2, fill=(8, 22, 28, 238))
+        d.rounded_rectangle((8, 8, 8 + lw + 28, h - 8), (h - 16) // 2, fill=B.YELLOW + (255,))
+        d.text((8 + 14, h / 2 + 1), lab, font=lf, fill=B.INK, anchor="lm")
+        x = 8 + lw + 28 + 16
+        d.polygon([(x, h / 2 - 11), (x + 16, h / 2), (x, h / 2 + 11)], fill=B.GREEN + (255,))
+        d.text((x + 30, h / 2 + 2), text, font=tf, fill=B.WHITE, anchor="lm")
+        return im
+
+    def cta_card(c):
+        """End card question for the comments (on screen only: the voice never asks questions)."""
+        parts = []
+        t = bar_img(c.get("title", "ΓΡΑΨΕ ΣΤΑ ΣΧΟΛΙΑ"), font(B.F_XB_I, 40), (8, 22, 28), B.YELLOW, skew=16, padx=22, hpad=1.45)
+        em = B.emoji_img("👇", 54)
+        tt = Image.new("RGBA", (t.width + 60, max(t.height, em.height + 12)), (0, 0, 0, 0))
+        tt.alpha_composite(t, (0, 0)); tt.alpha_composite(em, (t.width - 18, 2))
+        parts.append((tt, (0, 0))); y = t.height - 34 + 26
+        qf = font(B.F_BLACK_I, 86)
+        for ln in B.wrap(c["question"], qf, 880):
+            q = Image.new("RGBA", (int(_m.textlength(ln, font=qf)) + 30, int(qf.size * 1.25)), (0, 0, 0, 0))
+            ImageDraw.Draw(q).text((6, 4), ln, font=qf, fill=B.WHITE, stroke_width=4, stroke_fill=B.INK)
+            parts.append((q, (4, y))); y += int(qf.size * 1.05)
+        y += 30
+        for emo, label in c["options"]:
+            blk = bar_img("    ", font(B.F_BLACK_I, 78), (8, 22, 28), skew=22, padx=30)
+            e = B.emoji_img(emo, 74)
+            blk.alpha_composite(e, ((blk.width - 30 - e.width) // 2 + 2, (blk.height - 34 - e.height) // 2))
+            row = bar_img(label, font(B.F_BLACK_I, 74), B.WHITE, skew=22, padx=36)
+            opt = Image.new("RGBA", (blk.width + row.width, max(blk.height, row.height)), (0, 0, 0, 0))
+            opt.alpha_composite(blk, (0, 0)); opt.alpha_composite(row, (blk.width - 40, (blk.height - row.height) // 2))
+            parts.append((opt, (10, y))); y += blk.height - 34 + 22
+        return dict(parts=parts, h=y + 28, w=max(x + im.width for im, (x, _) in parts))
 
     def end_card():
         L = bg_plain.copy()
@@ -353,6 +410,9 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
     last = None
     k_story = -1
     cover_saved = False
+    P_pre = None          # story 1 prepared during the intro sting
+    hook_first = None     # first frame, for the seamless loop at the end
+    LOOP = float(cfg.get("loop_push", 0.4)) if cfg.get("hook") else 0.0
     for si, ((kind, s), (wav, words, dur, lead)) in enumerate(zip(segments, audio)):
         n = int(round(dur * FPS))
         caps = B.chunks(words, s["voice"], maxw=3)
@@ -361,52 +421,85 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             bg = B.hook_background(os.path.join(B.HERE, s["image"]) if s.get("image") else None, s.get("focus"), s.get("blur", 0))
             layer = banner_flat(banner(s, size=min(124, int(s.get("size", 124))), maxw=880))
             SB = B.scoreboard_card(s["scoreboard"]) if s.get("scoreboard") else None
+            HP = [tw for tw in (word_time(words, k) for k in s.get("punch_at", [])) if tw is not None]
             for f in range(n):
                 t = f / FPS
                 img = B.hook_frame(bg, t, dur)
+                pulse = max([1.0] + [1 + 0.07 * (1 - B.ease((t - tw) / 0.35)) for tw in HP if 0 <= t - tw < 0.35])
                 img.alpha_composite(logo_s, (46, HEAD_Y + 10))
                 if badge: img.alpha_composite(badge, (930 - badge.width, HEAD_Y - 6))
                 punch = 1.0 + 0.07 * (1 - B.ease(t / 0.25))
                 shake = int(9 * math.sin(t * 60) * max(0, 1 - t / 0.35))
                 if SB is not None:
-                    B.place(img, SB, W / 2 + shake, 560, (1 + 0.6 * (punch - 1)) * 0.94 + 0.03 * t / dur)
+                    B.place(img, SB, W / 2 + shake, 560, ((1 + 0.6 * (punch - 1)) * 0.94 + 0.03 * t / dur) * pulse)
                 L = layer if punch == 1.0 else layer.resize((int(layer.width * punch), int(layer.height * punch)), Image.BILINEAR)
                 img.alpha_composite(L, (34 + shake - (L.width - layer.width) // 2, (850 if SB is not None else 760) - (L.height - layer.height) // 2))
                 draw_ticker(img, TK, T0 + t)
                 if not cover_saved and t >= 0.6:   # cover for the profile grid: no caption on it
                     img.convert("RGB").save(os.path.splitext(out)[0] + "-cover.jpg", quality=95); cover_saved = True
                 ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci), 1350)
+                if f == 0: hook_first = img.copy()
                 proc.stdin.write(img.tobytes()); last = img
+            for tw in HP: ev.append((tw, "hit", 0.35))
         elif kind == "intro" and intro_video:
-            dec = subprocess.Popen(["ffmpeg", "-loglevel", "error", "-ss", f"{intro_start:.3f}", "-i", intro_video, "-t", f"{dur:.3f}",
+            sting = float(s.get("sting") or 0)
+            nxt = segments[si + 1] if si + 1 < len(segments) else None
+            use_sting = sting > 0 and nxt is not None and nxt[0] == "story"
+            clip_t = min(dur, sting + 0.2) if use_sting else dur
+            dec = subprocess.Popen(["ffmpeg", "-loglevel", "error", "-ss", f"{intro_start:.3f}", "-i", intro_video, "-t", f"{clip_t:.3f}",
                                     "-vf", f"scale={W}:{H},fps={FPS}", "-f", "rawvideo", "-pix_fmt", "rgba", "-"], stdout=subprocess.PIPE)
-            fr_last = None
+            if use_sting:
+                P_pre = prep_story(nxt[1], audio[si + 1][1]); P_pre["banner_shown"] = True
+            fr_last = clip_last = None
             for f in range(n):
-                buf = dec.stdout.read(W * H * 4)
-                if len(buf) == W * H * 4: fr_last = Image.frombytes("RGBA", (W, H), buf)
-                img = fr_last.copy(); t = f / FPS
-                if t < 0.14:                                    # green flash on the cut from the hook
-                    img.alpha_composite(Image.new("RGBA", (W, H), B.GREEN + (int(150 * (1 - t / 0.14)),)))
+                t = f / FPS
+                if not use_sting or t < sting:
+                    buf = dec.stdout.read(W * H * 4)
+                    if len(buf) == W * H * 4: fr_last = Image.frombytes("RGBA", (W, H), buf)
+                    img = fr_last.copy()
+                    if t < 0.14:                                    # green flash on the cut from the hook
+                        img.alpha_composite(Image.new("RGBA", (W, H), B.GREEN + (int(150 * (1 - t / 0.14)),)))
+                    clip_last = img
+                else:                                               # story 1 slides in under the intro line
+                    u = t - sting
+                    content = story_frame(P_pre, 0.0, audio[si + 1][2], T0 + t, bu=u - 0.05)
+                    draw_ticker(content, TK, T0 + t)
+                    img = content.copy(); header(img); progress(img, 0, 0.0)
+                    if u < TR: img = push(clip_last, img, u / TR, 0)
                 ci, ch = cur_chunk(caps, t); caption(img, ch, t, (si, ci))
                 proc.stdin.write(img.tobytes()); last = img
-            dec.stdout.close(); dec.wait()
+            dec.stdout.read(); dec.stdout.close(); dec.wait()
             ev.append((0.0, "whoosh", 0.4))
+            if use_sting: ev.append((sting, "whoosh", 0.38))
         elif kind == "story":
             k_story += 1
-            P = prep_story(s, words)
+            pre_shown = P_pre is not None and k_story == 0
+            P = P_pre if pre_shown else prep_story(s, words)
             if P["stat"]:
                 P["stat_fr"] = stat_frames(P["stat"]); ev.append((P["stat"]["t"], "pop", 0.45))
             for ts, _ in P["imgs"][1:]: ev.append((ts, "whoosh", 0.18))
-            ev.append((0.0, "whoosh", 0.38))
+            for tw in P["hits"]: ev.append((tw, "hit", 0.32))
+            if not pre_shown: ev.append((0.0, "whoosh", 0.38))
             from_intro = segments[si - 1][0] in ("intro", "hook")
+            chip = None
+            if k_story + 1 < NS and cfg.get("next_chip", True):
+                chip = next_chip(stories[k_story + 1]["tag"]); cs = max(2.0, dur - 1.75)
+                st = P["stat"]   # keep clear of a number card on the same side
+                busy_left = bool(st and st.get("side") == "left" and st["t"] < dur and st["t"] + st.get("hold", 3.0) > cs)
+                chip_left = not busy_left
+                ev.append((cs, "click", 0.3))
             for f in range(n):
                 t = f / FPS
                 content = story_frame(P, t, dur, T0 + t)
+                if chip is not None and t >= cs:
+                    q = B.ease((t - cs) / 0.3)
+                    x = 26 - (chip.width + 40) * (1 - q) if chip_left else 925 - chip.width + 30 + (chip.width + 60) * (1 - q)
+                    content.alpha_composite(chip, (int(x), PY + 18))
                 draw_ticker(content, TK, T0 + t)
                 ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
                 clean = content                      # header-free copy for the next push
                 frac = _clamp(t / dur)
-                if last is not None and t < TR:
+                if last is not None and t < TR and not pre_shown:
                     if from_intro:                   # the header arrives with the first story
                         img = content.copy(); header(img); progress(img, k_story, frac)
                         img = push(last, img, t / TR, 0)
@@ -417,16 +510,24 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 proc.stdin.write(img.tobytes())
             last = clean
         else:  # recap / end card
-            EC = end_card()
+            CTA = cta_card(cfg["comment_cta"]) if cfg.get("comment_cta") else None
+            EC = bg_plain.copy() if CTA else end_card()
+            cta_bottom = PROG_Y + 40 + (CTA["h"] if CTA else 0)
+            fy = int(cfg.get("follow", {}).get("y", max(1150, cta_bottom + 175) if CTA else 1150))
             ev.append((0.0, "whoosh", 0.38))
+            if LOOP and hook_first is not None: ev.append((dur - LOOP, "whoosh", 0.35))
             for f in range(n):
                 t = f / FPS
-                content = EC.copy(); draw_ticker(content, TK, T0 + t)
+                content = EC.copy()
+                if CTA: draw_banner(content, CTA, 40, cta_bottom, t - 0.15)
+                draw_ticker(content, TK, T0 + t)
                 if not FT or t < FT["tF"]:
                     ci, ch = cur_chunk(caps, t); caption(content, ch, t, (si, ci))
                 img = push(last, content, t / TR, 0) if (last is not None and t < TR) else content
                 header(img); progress(img, NS, 1.0)
-                if FT: B.draw_follow(img, t, FCARD, FT, CY=int(cfg.get("follow", {}).get("y", 1150)))
+                if FT: B.draw_follow(img, t, FCARD, FT, CY=fy, dim=not CTA)
+                if LOOP and hook_first is not None and t >= dur - LOOP:     # last frames slide into the first one
+                    img = push(img, hook_first, (t - (dur - LOOP)) / LOOP, 0)
                 proc.stdin.write(img.tobytes())
             last = img
         if ev: sfx[si] = ev

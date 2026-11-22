@@ -874,12 +874,12 @@ def follow_times(words, default=1.2):
     tF = max(0.5, tw - 0.3)
     return dict(tF=tF, tP=tF + 0.55, tTap=tF + 1.05, tOn=tF + 1.11)
 
-def draw_follow(fr, t, k, T, CX=W // 2, CY=880):
+def draw_follow(fr, t, k, T, CX=W // 2, CY=880, dim=True):
     tF, tP, tTap, tOn = T["tF"], T["tP"], T["tTap"], T["tOn"]
     v = t - tF
     if v <= 0: return
-    dim = Image.new("RGBA", fr.size, (4, 10, 14, int(150 * min(1, v / 0.3))))     # focus on the card
-    fr.alpha_composite(dim)
+    if dim:                                                                  # focus on the card
+        fr.alpha_composite(Image.new("RGBA", fr.size, (4, 10, 14, int(150 * min(1, v / 0.3)))))
     bx, by, bw, bh = k["btn"]
     bc = (CX - k["CW"] / 2 + bx + bw / 2, CY - k["CH"] / 2 + by + bh / 2)
     target = (bc[0] + 150, bc[1] + 8)
@@ -960,6 +960,10 @@ def sfx_notify(dur=1.0):
         tone = sum(g * np.sin(2 * np.pi * f * k * tt) for k, g in ((1, 1.0), (2, 0.35), (3, 0.12)))
         return (t >= t0) * tone * np.exp(-tt * 6.5) * np.clip(tt / 0.004, 0, 1)
     return note(1318.5, 0.0) * 0.55 + note(1975.5, 0.11) * 0.6
+def sfx_hit(dur=0.6):
+    import numpy as np
+    t = _env(dur)
+    return (0.9 * np.sin(2 * np.pi * 58 * t) * np.exp(-6 * t) + 0.35 * _band(dur, 80, 2500, 9) * np.exp(-22 * t)) * 0.8
 def sfx_confetti(dur=1.4):
     import numpy as np
     rng = np.random.default_rng(7); y = np.zeros(int(dur * SR))
@@ -973,7 +977,7 @@ def sfx_confetti(dur=1.4):
 def mix_sfx(path, events):
     """Add sound effects [(time, name, gain)] into a mono 16-bit wav in place."""
     import numpy as np, wave as wv
-    lib = {"whoosh": sfx_whoosh, "pop": sfx_pop, "click": sfx_click, "notify": sfx_notify, "confetti": sfx_confetti}
+    lib = {"whoosh": sfx_whoosh, "pop": sfx_pop, "click": sfx_click, "notify": sfx_notify, "confetti": sfx_confetti, "hit": sfx_hit}
     with wv.open(path) as f:
         fs = f.getframerate(); y = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float64) / 32768
     for t0, name, g in events:
@@ -1248,10 +1252,10 @@ def main():
                 dur = duration(wav) + lead + float(s.get("hold", 0.15))
             else:
                 lead = 0.15
-                dur = duration(wav) + lead + (1.2 if i == len(segments) - 1 else 0.12)
+                dur = duration(wav) + lead + (float(cfg.get("end_hold", 1.2)) if i == len(segments) - 1 else 0.12)
             if kind == "recap" and FOLLOW:
                 FT = follow_times([(a + lead, b + lead, w) for a, b, w in words])
-                dur = max(dur, FT["tOn"] + 1.9)
+                dur = max(dur, FT["tOn"] + float(cfg.get("follow_hold", 1.9)))
             audio.append((wav, [(a + lead, b + lead, w) for a, b, w in words], dur, lead))
         return audio, FT, engine
     try:
@@ -1434,9 +1438,10 @@ def main():
                                 "-t", f"{dur:.3f}", "-ar", "44100", "-ac", "1", p], check=True)
             elif segments[i][0] == "intro" and intro_video:
                 vol = float(intro.get("music_volume", 0.35))
+                fst = min(max(0, dur - 0.5), float(intro.get("sting") or 99))      # music leaves with the logo sting
                 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", intro_video, "-i", wav, "-filter_complex",
                                 f"[0:a]atrim={intro_start:.3f}:{intro_start + dur:.3f},asetpts=PTS-STARTPTS,aformat=channel_layouts=mono,volume='if(gte(t,{lead - 0.2:.2f}),{vol},1)':eval=frame,"
-                                f"afade=t=out:st={max(0, dur - 0.5):.3f}:d=0.5[m];"
+                                f"afade=t=out:st={fst:.3f}:d=0.5[m];"
                                 f"[1:a]adelay={int(lead * 1000)},apad[v];[m][v]amix=inputs=2:duration=first:normalize=0",
                                 "-t", f"{dur:.3f}", "-ar", "44100", "-ac", "1", p], check=True)
             else:
