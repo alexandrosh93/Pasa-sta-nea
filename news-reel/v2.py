@@ -236,6 +236,25 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             d.text((64, y + 6), ln, font=sf, fill=(205, 220, 226), stroke_width=2, stroke_fill=B.INK); y += sh_
         return im
 
+    def score_row(sb, width=940):
+        """Compact result card (crests, score, scorers) for hooks that show several results at once."""
+        h = 235
+        im = Image.new("RGBA", (width + 40, h + 40), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+        d.rounded_rectangle((20, 20, 20 + width, 20 + h), 30, fill=(8, 22, 28, int(255 * float(sb.get("opacity", 0.55)))))
+        for side, cx in (("home", 20 + 165), ("away", 20 + width - 165)):
+            if sb.get(side + "_logo"):
+                c = B.crest_img(sb[side + "_logo"], 100); im.alpha_composite(c, (int(cx - c.width / 2), 18))
+            nf = font(B.F_BLACK_I, 40)
+            while nf.size > 26 and d.textlength(sb[side], font=nf) > 290: nf = font(B.F_BLACK_I, nf.size - 2)
+            d.text((cx, 20 + 154), sb[side], font=nf, fill=B.WHITE, anchor="mm", stroke_width=3, stroke_fill=B.INK)
+        hs, as_ = sb["score"]; sf = font(B.F_BLACK_I, 128); mid = 20 + width / 2
+        d.text((mid - 72, 20 + 88), str(hs), font=sf, fill=B.WHITE, anchor="mm", stroke_width=4, stroke_fill=B.INK)
+        d.text((mid + 80, 20 + 88), str(as_), font=sf, fill=B.YELLOW, anchor="mm", stroke_width=4, stroke_fill=B.INK)
+        d.rounded_rectangle((mid - 14, 20 + 92, mid + 18, 20 + 106), 6, fill=(170, 190, 200, 255))
+        if sb.get("sub"):
+            d.text((mid, 20 + 203), sb["sub"], font=font(B.F_XB_I, 31), fill=(210, 222, 228), anchor="mm", stroke_width=2, stroke_fill=B.INK)
+        return im
+
     # ---------------------------------------------------------------- stat badge
     def stat_card(value, label):
         f = font(B.F_BLACK_I, 118)
@@ -458,9 +477,14 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
             layer = banner_flat(banner(s, size=min(124, int(s.get("size", 124))), maxw=880))
             SB = B.scoreboard_card(s["scoreboard"]) if s.get("scoreboard") else None
             HP = [tw for tw in (word_time(words, k) for k in s.get("punch_at", [])) if tw is not None]
-            QC = [quote_card(q, width=940) for q in s.get("quotes", [])]
-            QT = [0.1] + [(word_time(words, q["at"]) if q.get("at") else 0.1 + 1.4 * i) or 1.5 for i, q in list(enumerate(s.get("quotes", [])))[1:]]
-            QT = QT[:len(QC)]
+            ck = "scoreboards" if s.get("scoreboards") else "quotes"
+            CC = s.get(ck, [])
+            QC = [(score_row(c) if ck == "scoreboards" else quote_card(c, width=940)) for c in CC]
+            QT = []
+            for i, c in enumerate(CC):
+                tw = word_time(words, c["at"]) if c.get("at") else None
+                QT.append(tw if tw is not None else (0.1 if i == 0 else 0.1 + 1.4 * i))
+            CY = 565 if ck == "scoreboards" else 545
             for tq in QT[1:]: ev.append((tq, "hit", 0.4))
             cover_at = max([0.6] + [tq + 0.55 for tq in QT])
             if QC: ev.append((QT[0], "pop", 0.35))
@@ -475,7 +499,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
                 if SB is not None:
                     B.place(img, SB, W / 2 + shake, 560, ((1 + 0.6 * (punch - 1)) * 0.94 + 0.03 * t / dur) * pulse)
                 if QC:
-                    gap = 22; tot = sum(c.height - 40 for c in QC) + gap * (len(QC) - 1); y0 = 545 - tot / 2
+                    gap = 22; tot = sum(c.height - 40 for c in QC) + gap * (len(QC) - 1); y0 = CY - tot / 2
                     for i, (c, tq) in enumerate(zip(QC, QT)):
                         u = t - tq
                         if u > 0:
