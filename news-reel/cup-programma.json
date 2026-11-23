@@ -1,0 +1,40 @@
+{
+  "logo": "assets/logo.png",
+  "cover": {
+    "image": "photos/k0-kypello-trofeo.jpg",
+    "focus": [0.42, 0.5],
+    "photo_h": 700,
+    "tag": "ΚΥΠΕΛΛΟ COCA-COLA • ΦΑΣΗ ΤΩΝ 16",
+    "headline": ["ΚΛΕΙΔΩΣΑΝ ΟΙ", "[ΗΜΕΡΟΜΗΝΙΕΣ]!"],
+    "sub": ["8 μονοί αγώνες, από 9/12 ως 27/1"],
+    "swipe": "ΣΥΡΕ ΓΙΑ ΤΟ ΠΡΟΓΡΑΜΜΑ"
+  },
+  "slides": [
+    {"tag": "ΔΕΚΕΜΒΡΙΟΣ", "headline": ["ΠΡΩΤΗ ΜΠΑΙΝΕΙ", "Η [ΑΕΛ]"],
+     "matches": [
+       {"when": "ΤΕΤΑΡΤΗ 9 ΔΕΚΕΜΒΡΙΟΥ", "short_date": "9/12", "time": "19:00", "home": "ΑΕΛ", "away": "ΕΝΠ", "home_logo": "ael", "away_logo": "paralimni"},
+       {"when": "ΤΕΤΑΡΤΗ 16 ΔΕΚΕΜΒΡΙΟΥ", "short_date": "16/12", "time": "19:00", "home": "KRASAVA", "away": "ΑΣΙΛ", "home_logo": "https://www.kerkida.net/sites/default/files/2025-12/89%20%281%29%20%282%29.png", "away_logo": "asil"}
+     ]},
+    {"tag": "ΤΕΤΑΡΤΗ 6 ΙΑΝΟΥΑΡΙΟΥ", "headline": ["ΝΤΕΡΜΠΙ", "[ΑΝΗΜΕΡΑ ΤΑ ΦΩΤΑ]"],
+     "matches": [
+       {"when": "ΤΕΤΑΡΤΗ 6 ΙΑΝΟΥΑΡΙΟΥ", "short_date": "6/1", "time": "19:00", "home": "ΟΜΟΝΟΙΑ", "away": "ΟΛΥΜΠΙΑΚΟΣ", "home_logo": "omonoia", "away_logo": "olimpiakos-lef", "hot": true, "label": "ΝΤΕΡΜΠΙ ΤΗΣ ΛΕΥΚΩΣΙΑΣ"}
+     ]},
+    {"tag": "ΤΕΤΑΡΤΗ 20 ΙΑΝΟΥΑΡΙΟΥ", "headline": ["ΔΙΠΛΗ", "[ΦΩΤΙΑ]"],
+     "matches": [
+       {"when": "ΤΕΤΑΡΤΗ 20 ΙΑΝΟΥΑΡΙΟΥ", "short_date": "20/1", "time": "18:00", "home": "ΑΠΟΕΛ", "away": "ΑΡΗΣ", "home_logo": "apoel", "away_logo": "aris", "hot": true},
+       {"when": "ΤΕΤΑΡΤΗ 20 ΙΑΝΟΥΑΡΙΟΥ", "short_date": "20/1", "time": "19:00", "home": "ΑΕΚ", "away": "ΑΝΟΡΘΩΣΗ", "home_logo": "https://www.kerkida.net/sites/default/files/2026-08/AEK26_Logo_Color_.png", "away_logo": "anorthosi", "hot": true}
+     ]},
+    {"tag": "ΤΕΤΑΡΤΗ 27 ΙΑΝΟΥΑΡΙΟΥ", "headline": ["ΤΡΙΑ ΜΑΤΣ", "[ΜΙΑ ΤΕΤΑΡΤΗ]"],
+     "matches": [
+       {"when": "ΤΕΤΑΡΤΗ 27 ΙΑΝΟΥΑΡΙΟΥ", "short_date": "27/1", "time": "17:00", "home": "ΟΜΟΝΟΙΑ ΑΡΑΔΙΠΠΟΥ", "away": "ΟΜΟΝΟΙΑ 29Μ", "home_s": "ΟΜ. ΑΡΑΔΙΠΠΟΥ", "home_logo": "omonoia-ara", "away_logo": "https://www.kerkida.net/sites/default/files/2024-01/omonoia29m.png"},
+       {"when": "ΤΕΤΑΡΤΗ 27 ΙΑΝΟΥΑΡΙΟΥ", "short_date": "27/1", "time": "18:00", "home": "ΝΕΑ ΣΑΛΑΜΙΝΑ", "away": "ΠΑΦΟΣ", "home_logo": "nea-salamina", "away_logo": "pafos"},
+       {"when": "ΤΕΤΑΡΤΗ 27 ΙΑΝΟΥΑΡΙΟΥ", "short_date": "27/1", "time": "18:00", "home": "ΚΑΡΜΙΩΤΙΣΣΑ", "away": "ΑΠΟΛΛΩΝΑΣ", "home_logo": "https://www.kerkida.net/sites/default/files/2026-06/WhatsApp%20Image%202026-06-01%20at%2013.40.42-Photoroom.png", "away_logo": "apollon"}
+     ]}
+  ],
+  "summary": {"tag": "ΣΩΣΕ ΤΟ ΓΙΑ ΝΑ ΜΗ ΧΑΣΕΙΣ ΜΑΤΣ", "headline": ["ΟΛΟ ΤΟ [ΠΡΟΓΡΑΜΜΑ]"], "note": "Όλοι οι αγώνες είναι μονοί • γηπεδούχος αριστερά"},
+  "cta": {
+    "title": "ΓΡΑΨΕ ΣΤΑ ΣΧΟΛΙΑ",
+    "question": "ΠΟΙΟ ΖΕΥΓΑΡΙ\nΠΕΡΙΜΕΝΕΙΣ ΠΙΟ ΠΟΛΥ;",
+    "options": [["🔥", "ΟΜΟΝΟΙΑ – ΟΛΥΜΠΙΑΚΟΣ"], ["⚡", "ΑΠΟΕΛ – ΑΡΗΣ"], ["💥", "ΑΕΚ – ΑΝΟΡΘΩΣΗ"], ["⚽", "ΚΑΠΟΙΟ ΑΛΛΟ"]]
+  }
+}
