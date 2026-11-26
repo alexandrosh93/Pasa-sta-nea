@@ -353,7 +353,7 @@ def render(B, cfg, segments, audio, FT, video, rnd, intro_video, intro_start, ou
 
     def stat_frames(st):
         m = re.match(r"([\d.]+)(.*)", st["value"])
-        if m and m.group(1).replace(".", "").isdigit():
+        if m and m.group(1).replace(".", "").isdigit() and ":" not in st["value"] and st.get("count", True):   # no count-up for times (22:00)
             n, suf, dots = int(m.group(1).replace(".", "")), m.group(2), "." in m.group(1)
             vals = sorted(set(int(round(n * i / 24)) for i in range(25)))        # at most 25 steps for big numbers
             return [stat_card((f"{v:,}".replace(",", ".") if dots else str(v)) + suf, st["label"]) for v in vals]

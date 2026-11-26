@@ -1,0 +1,136 @@
+{
+  "voice": "el-GR-NestorasNeural",
+  "rate": "+8%",
+  "kicker": "ΚΥΠΡΙΑΚΟ ΠΟΔΟΣΦΑΙΡΟ",
+  "logo": "assets/logo.png",
+  "intro": {
+    "video": "assets/intro.mp4",
+    "voice_at": 0.35,
+    "min_length": 1.5,
+    "music_volume": 0.3,
+    "voice": "Πάσα στα νέα! Πάμε στο Τορίνο.",
+    "start": 1.0,
+    "sting": 1.25,
+    "tail": 0.08
+  },
+  "hook": {
+    "tag": "EUROPA LEAGUE • ΑΠΟΨΕ 22:00",
+    "headline": [
+      "ΠΡΑΣΙΝΗ ΒΡΑΔΙΑ",
+      "ΣΤΟ [ΤΟΡΙΝΟ]!"
+    ],
+    "image": "photos/t0-omonoiates-valentino.jpg",
+    "focus": [
+      0.5,
+      0.45
+    ],
+    "size": 124,
+    "voice": "Πράσινη βραδιά στο Τορίνο! Απόψε η Ομόνοια παίζει με τη Γιουβέντους!"
+  },
+  "stories": [
+    {
+      "tag": "ΟΙ ΟΜΟΝΟΙΑΤΕΣ ΣΤΟ ΤΟΡΙΝΟ",
+      "headline": [
+        "ΤΟ ΤΟΡΙΝΟ",
+        "ΕΓΙΝΕ [ΠΡΑΣΙΝΟ]"
+      ],
+      "image": "photos/t1-omonoiates-parko.jpg",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "images": [
+        {
+          "src": "photos/t1b-omonoiates-synthimata.jpg",
+          "at": "Συνθήματα",
+          "focus": [
+            0.5,
+            0.4
+          ]
+        },
+        {
+          "src": "photos/t1c-valentino-giorti.jpg",
+          "at": "γιορτή",
+          "focus": [
+            0.5,
+            0.55
+          ]
+        }
+      ],
+      "stat": {
+        "value": "2.100",
+        "label": "ΟΜΟΝΟΙΑΤΕΣ ΣΤΗΝ ΕΞΕΔΡΑ",
+        "at": "χιλιάδες",
+        "side": "left"
+      },
+      "body": "Περίπου 2.100 Ομονοιάτες στην εξέδρα. Συνθήματα και γιορτή στο πάρκο Valentino.",
+      "voice": "Περίπου δύο χιλιάδες εκατό Ομονοιάτες θα είναι απόψε στην εξέδρα. Συνθήματα στους δρόμους της πόλης, γιορτή στο πάρκο Βαλεντίνο!"
+    },
+    {
+      "tag": "ΓΙΟΥΒΕΝΤΟΥΣ – ΟΜΟΝΟΙΑ • 22:00",
+      "headline": [
+        "ΜΙΑ ΝΥΧΤΑ",
+        "ΓΙΑ [ΙΣΤΟΡΙΑ]"
+      ],
+      "image": "photos/t2-allianz.jpg",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "images": [
+        {
+          "src": "photos/t2b-omonoia-proponisi.jpg",
+          "at": "τριφύλλι",
+          "focus": [
+            0.5,
+            0.5
+          ]
+        }
+      ],
+      "stat": {
+        "value": "22:00",
+        "label": "ΑΠΟΨΕ • EUROPA LEAGUE",
+        "at": "δέκα",
+        "side": "left"
+      },
+      "body": "Απόψε 22:00 στο Allianz Stadium. Η Ομόνοια έχει 2 νίκες σε 4 ματς, η Γιουβέντους είναι αήττητη.",
+      "voice": "Στις δέκα, η Ομόνοια μπαίνει στο σπίτι της Γιουβέντους, για την πέμπτη αγωνιστική του Γιουρόπα Λιγκ. Το τριφύλλι έχει δύο νίκες στα τέσσερα πρώτα ματς. Η Γιουβέντους δεν έχει χάσει ακόμα!"
+    }
+  ],
+  "outro": {
+    "voice": "Καλή επιτυχία στην Ομόνοια! Κάνε φόλοου στο κουπονάκι ντοτ κομ, για να μάθεις πρώτος το αποτέλεσμα!"
+  },
+  "engine": "elevenlabs",
+  "region": "northeurope",
+  "edge_rate": "+22%",
+  "loudness": -13,
+  "date": "2026-11-26",
+  "elevenlabs_voice": "ph7fdc8fp13C4spMbl27",
+  "elevenlabs_model": "eleven_v4",
+  "elevenlabs_settings": {
+    "stability": 0.53,
+    "similarity_boost": 0.74
+  },
+  "elevenlabs_one_take": true,
+  "layout": "v2",
+  "end_hold": 0.55,
+  "follow_hold": 1.3,
+  "comment_cta": {
+    "title": "ΓΡΑΨΕ ΣΤΑ ΣΧΟΛΙΑ",
+    "question": "ΠΕΣ ΤΟ ΣΚΟΡ ΣΟΥ ΓΙΑ ΑΠΟΨΕ!",
+    "options": [
+      [
+        "🟢",
+        "ΟΜΟΝΟΙΑ"
+      ],
+      [
+        "🤝",
+        "ΙΣΟΠΑΛΙΑ"
+      ],
+      [
+        "⚪",
+        "ΓΙΟΥΒΕΝΤΟΥΣ"
+      ]
+    ]
+  }
+}
